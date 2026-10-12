@@ -220,7 +220,7 @@ most 10 targets in total. EKS and standalone tasks are not supported.
 | Field | Rule |
 | --- | --- |
 | `id` | A label you choose: `ecs-` plus 1 to 24 lowercase letters, digits or `_` (no hyphen). It appears in alarm names, chat and reports |
-| `cluster`, `service` | Names, not ARNs. Both must exist in the monitor region and the service must be ACTIVE before `check` |
+| `cluster`, `service` | Names, not ARNs. Both must exist in the monitor region and the service must be ACTIVE before `check`. All cluster and service names together must fit about 2.5 KB, which ten ordinary names do; the file is refused with "too long in total" otherwise |
 | `load_balancer` | **Required, so the question is always answered.** `null` when no Application Load Balancer is in front. Otherwise the ALB and the target group the service uses, both in your account and region. Network and Gateway load balancers are not supported: use `null` |
 | `existing_log_groups` | Optional, up to 8 (sidecars write to their own groups). The `awslogs` groups the service writes to. Tracaus reads them whole and never creates or changes them. One log group can belong to one service, so give each service its own. Leave it out and Tracaus reads no logs for this service |
 | `resource_alarms` | Default `true`. CPU and memory alarms |

@@ -115,9 +115,11 @@ def test_the_ingress_learns_the_ecs_targets_and_allows_every_target(tmp_path):
         env.update(resource["Properties"]["Environment"]["Variables"])
     assert env["ALLOWED_INSTANCE_IDS"] == f"{EC2},ecs-orders,ecs-worker"
     ecs = json.loads(env["ECS_TARGETS"])
-    assert ecs["ecs-orders"]["cluster_arn"].endswith(":cluster/prod-cluster")
-    assert ecs["ecs-orders"]["service"] == "orders-api"
-    assert ecs["ecs-worker"]["load_balancer"] is None
+    assert ecs["ecs-orders"] == {
+        "cluster_arn": "arn:aws:ecs:eu-central-1:123456789012:cluster/prod-cluster",
+        "service": "orders-api",
+    }  # only what the ingestion needs to match an event; the ALB details stay in the tools' packaged file
+    assert set(ecs) == {"ecs-orders", "ecs-worker"}
 
 
 def test_ec2_only_ingress_has_no_ecs_setting(tmp_path):
@@ -155,3 +157,39 @@ def test_the_delivery_dead_letter_queue_accepts_the_ecs_rule(tmp_path):
             "arn:aws:events:eu-central-1:123456789012:rule/tracaus-staging-incident-sweep",
         ]
     ]
+
+
+def many_services(tmp_path, count, name="orders-service-name", cluster="production-cluster"):
+    value = json.loads((ROOT / "examples/ecs.example.json").read_text())
+    value["reference_only"] = False
+    balancer = value["ecs_services"][0]["load_balancer"]
+    value["ecs_services"] = [
+        {
+            "id": f"ecs-s{n}",
+            "cluster": cluster,
+            "service": f"{name}-{n}",
+            "load_balancer": balancer,
+            "existing_log_groups": [{"name": f"/ecs/{name}-{n}"}],
+        }
+        for n in range(count)
+    ]
+    path = tmp_path / "deployment.json"
+    path.write_text(json.dumps(value))
+    return load(path)
+
+
+def test_ten_alb_backed_services_still_render_the_ingestion_environment(tmp_path):
+    runtime = stages(many_services(tmp_path, 10))[
+        "durable-runtime"
+    ]  # raises if the 4 KiB environment limit is hit
+    env = next(
+        r["Properties"]["Environment"]["Variables"]
+        for r in resources(runtime, "Lambda::Function").values()
+        if "ECS_TARGETS" in r["Properties"]["Environment"]["Variables"]
+    )
+    assert len(json.loads(env["ECS_TARGETS"])) == 10
+
+
+def test_names_too_long_for_the_ingestion_setting_are_refused_when_the_file_loads(tmp_path):
+    with pytest.raises(ValueError, match="too long in total"):
+        many_services(tmp_path, 10, name="s" * 120, cluster="c" * 120)

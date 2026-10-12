@@ -224,7 +224,7 @@ def test_an_ecs_id_is_accepted_and_a_bad_one_is_not(groups):
     assert search({"instance_id": "orders"}, insights())["status"] == "error"
 
 
-def packaged_tools(tmp_path, spec, ecs=None, functions=None):
+def packaged_tools(tmp_path, spec, ecs=None, functions=None, no_schema=False):
     """A build directory as scripts/build_lambdas.py would write it, minus the downloaded wheels."""
     import hashlib
     import zipfile
@@ -235,8 +235,8 @@ def packaged_tools(tmp_path, spec, ecs=None, functions=None):
         "agent-instruction.txt",
         "schemas/fetch_logs.json",
         "schemas/fetch_metrics.json",
+        *([] if no_schema else ["schemas/fetch_ecs.json"]),
         "tracaus_agentcore.py",
-        *(["schemas/fetch_ecs.json"] if ecs else []),
     }
     lock = (ROOT / "requirements/lambda.lock").read_bytes()
     files = {name: (ROOT / name).read_bytes() for name in names}
@@ -311,3 +311,15 @@ def test_the_release_check_binds_the_packaged_ecs_targets_to_the_inventory(tmp_p
         release.checked_build(build, plain)  # a stray file the inventory does not declare
     packaged_tools(build, plain)
     assert set(release.checked_build(build, plain)["functions"]) == {"fetch_logs", "fetch_metrics"}
+
+
+def test_every_package_must_carry_the_ecs_tool_contract(tmp_path):
+    from infra import release
+    from infra.spec import ROOT, load
+    from infra.verify import VerificationError
+
+    plain = load(ROOT / "examples/deployment.example.json")
+    packaged_tools(tmp_path, plain, no_schema=True)
+    # The runtime reads the schema of every tool it may offer, so even an EC2-only package needs it.
+    with pytest.raises(VerificationError, match="omits required"):
+        release.checked_build(tmp_path, plain)

@@ -119,6 +119,7 @@ def packaged(tmp_path, spec, existing=None):
         "agent-instruction.txt",
         "schemas/fetch_logs.json",
         "schemas/fetch_metrics.json",
+        "schemas/fetch_ecs.json",
         "tracaus_agentcore.py",
     }
     lock = (ROOT / "requirements/lambda.lock").read_bytes()

@@ -4,8 +4,8 @@ import json
 
 from infra.spec import (
     digest,
+    ecs_ingress,
     ecs_services,
-    ecs_targets,
     event_rules,
     fallback_recipients,
     name,
@@ -433,7 +433,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                     else {}
                 ),
                 **(
-                    {"ECS_TARGETS": json.dumps(ecs_targets(spec), sort_keys=True, separators=(",", ":"))}
+                    {"ECS_TARGETS": json.dumps(ecs_ingress(spec), sort_keys=True, separators=(",", ":"))}
                     if ecs_services(spec)
                     else {}
                 ),

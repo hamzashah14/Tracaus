@@ -8,6 +8,9 @@ from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_TARGETS = 10  # EC2 instances and ECS services together
+MAX_ECS_INGRESS_BYTES = (
+    2500  # of the 4 KiB a Lambda environment may render to, beside the ingestion's own settings
+)
 
 
 def digest(value):
@@ -61,6 +64,15 @@ def alb_dimensions(load_balancer):
     return {
         "LoadBalancer": load_balancer["load_balancer_arn"].split(":loadbalancer/", 1)[1],
         "TargetGroup": load_balancer["target_group_arn"].rsplit(":", 1)[1],
+    }
+
+
+def ecs_ingress(spec):
+    """What the ingestion function needs to tell one service's events from another's. It lives in an environment
+    variable, so it stays small: the tools get the rest from their packaged ecs-targets.json."""
+    return {
+        target: {"cluster_arn": where["cluster_arn"], "service": where["service"]}
+        for target, where in ecs_targets(spec).items()
     }
 
 
@@ -138,6 +150,10 @@ def load(path):
             )
         for name in names:
             modes.setdefault(name, []).append("all")
+    if len(json.dumps(ecs_ingress(value), separators=(",", ":"))) > MAX_ECS_INGRESS_BYTES:
+        raise ValueError(
+            "ECS cluster and service names are too long in total for the ingestion setting; shorten them or list fewer services"
+        )
     if any("all" in seen and len(seen) > 1 for seen in modes.values()):
         raise ValueError("An existing log group read with streams=all can belong to one instance only")
     account = value["account_id"]

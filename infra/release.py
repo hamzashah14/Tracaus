@@ -40,9 +40,10 @@ def checked_build(directory, spec):
             "agent-instruction.txt",
             "schemas/fetch_logs.json",
             "schemas/fetch_metrics.json",
+            "schemas/fetch_ecs.json",
             "tracaus_agentcore.py",
             "lambda_function.py",
-            *(["schemas/fetch_ecs.json", "config/ecs-targets.json"] if ecs_targets(spec) else []),
+            *(["config/ecs-targets.json"] if ecs_targets(spec) else []),
         }
         if not required <= set(item["source_files"]):
             raise VerificationError("Build manifest omits required current source")

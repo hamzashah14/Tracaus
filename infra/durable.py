@@ -78,6 +78,7 @@ def checked_build(path, *, expected_functions=PIPELINE_FUNCTIONS, architecture="
             "agent-instruction.txt",
             "schemas/fetch_logs.json",
             "schemas/fetch_metrics.json",
+            "schemas/fetch_ecs.json",
             "tracaus_agentcore.py",
             "lambda_function.py",
         }

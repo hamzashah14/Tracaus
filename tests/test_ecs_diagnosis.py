@@ -182,3 +182,30 @@ def test_the_model_is_told_about_the_new_kind_and_its_limits():
 
     text = (ROOT / "agent-instruction.txt").read_text()
     assert "ECS SERVICES" in text and "fetch_ecs" in text and "ServiceSchedulerInitiated" in text
+
+
+def test_the_finding_must_quote_the_task_that_failed_not_a_routine_one_beside_it():
+    routine = stopped(
+        "ServiceSchedulerInitiated", "Scaling activity initiated by (deployment ecs-svc/1)", None
+    )
+    both = [("fetch_ecs", ecs_result(routine, stopped()))]  # index 0 is routine, index 1 crashed
+    assert (
+        report("task_failure", both, [(0, "/stopped_tasks/0/stop_code", "ServiceSchedulerInitiated")])
+        == "REJECTED"
+    )
+    assert (
+        report("task_failure", both, [(0, "/stopped_tasks/1/stop_code", "EssentialContainerExited")])
+        == "VALID"
+    )
+    both_quoted = [
+        (0, "/stopped_tasks/0/stop_code", "ServiceSchedulerInitiated"),
+        (0, "/stopped_tasks/1/stop_code", "EssentialContainerExited"),
+    ]
+    assert report("task_failure", both, both_quoted) == "VALID"  # quoting the routine one as context is fine
+
+
+def test_a_citation_past_the_end_of_the_stopped_tasks_does_not_count():
+    assert (
+        report("task_failure", CRASH, [(0, "/stopped_tasks/5/stop_code", "EssentialContainerExited")])
+        == "REJECTED"
+    )

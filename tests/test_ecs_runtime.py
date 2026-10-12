@@ -275,7 +275,7 @@ def test_an_ecs_incident_prompt_names_the_service_and_the_stop_code(incident):
     seen = incident(ORDERS, stop_code="EssentialContainerExited")
     assert "Investigate ECS service ecs-orders near 2026-10-12T10:00:00Z." in seen["prompt"]
     assert "ecs STOPPED (EssentialContainerExited)" in seen["prompt"] and "fetch_ecs" in seen["prompt"]
-    assert seen["required_evidence"] == {"fetch_ecs", "fetch_metrics"}
+    assert seen["required_evidence"] == {"fetch_ecs"}  # a service with no running tasks publishes no metrics
     assert set(seen["arns"]) == {"fetch_logs", "fetch_metrics", "fetch_ecs"} and seen["allowed"] == {ORDERS}
 
 
@@ -400,6 +400,8 @@ def test_the_ecs_tool_function_is_read_only_and_scoped(ecs_spec):
     assert services == [
         f"arn:aws:ecs:{REGION}:{ACCOUNT}:service/prod-cluster/orders-api",
         f"arn:aws:ecs:{REGION}:{ACCOUNT}:service/prod-cluster/worker",
+        f"arn:aws:ecs:{REGION}:{ACCOUNT}:service/orders-api",  # a service created before long ARNs
+        f"arn:aws:ecs:{REGION}:{ACCOUNT}:service/worker",
     ]
     scoped = next(s for s in role if s["Action"] == ["ecs:ListTasks", "ecs:DescribeTasks"])
     assert scoped["Condition"]["ArnEquals"]["ecs:cluster"] == [
@@ -494,3 +496,9 @@ def test_a_mixed_deployment_keeps_the_ec2_canary(ecs_spec, monkeypatch, tmp_path
         value, ["fetch_logs", "fetch_metrics"], ["fetch_logs", "fetch_metrics"], monkeypatch
     )
     assert receipt["status"] == "PASS" and f"instance {EC2}" in prompt
+
+
+def test_an_ecs_incident_completes_on_service_state_when_there_are_no_metrics():
+    # No running tasks means no AWS/ECS datapoints: the very failure being investigated must not read as incomplete.
+    results = {**OK, "fetch_metrics": {"status": "no_data", "complete": True}}
+    assert drive(["fetch_ecs", "fetch_metrics"], {"fetch_ecs"}, results)[0]["complete"]

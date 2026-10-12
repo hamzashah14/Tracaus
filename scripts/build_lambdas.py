@@ -103,12 +103,12 @@ def build(
                 json.loads(ecs_path.read_text()), sort_keys=True, separators=(",", ":")
             ).encode()
         entries["requirements/lambda.lock"] = lock.read_bytes()
+        # Every package carries every tool contract: the runtime reads the schema of each tool it may offer, and
+        # a package without one fails at the first chat or incident of a deployment that lists ECS services.
         for filename in (
             "agent-instruction.txt",
-            "schemas/fetch_logs.json",
-            "schemas/fetch_metrics.json",
             "tracaus_agentcore.py",
-            *(["schemas/fetch_ecs.json"] if ecs_path else []),
+            *(f"schemas/{p.name}" for p in sorted((ROOT / "schemas").glob("*.json"))),
         ):
             entries[filename] = (ROOT / filename).read_bytes()
         manifest = {
@@ -136,7 +136,7 @@ def build(
                 "source_files": {
                     name: digest(data)
                     for name, data in files.items()
-                    if name.startswith("tracaus/")
+                    if name.startswith(("tracaus/", "schemas/"))
                     or name
                     in {
                         "lambda_function.py",
@@ -145,9 +145,6 @@ def build(
                         "config/existing-log-groups.json",
                         "config/ecs-targets.json",
                         "agent-instruction.txt",
-                        "schemas/fetch_logs.json",
-                        "schemas/fetch_metrics.json",
-                        "schemas/fetch_ecs.json",
                         "tracaus_agentcore.py",
                     }
                 },

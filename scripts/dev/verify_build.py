@@ -28,7 +28,10 @@ def build_with_ecs(out):
     return build(FUNCTIONS, out, CATALOG, WHEELS, ecs_path=ECS_TARGETS)
 
 
-LAMBDA_IMPORT = "import boto3,lambda_function; print(boto3.__version__)"
+LAMBDA_IMPORT = (
+    "import boto3,lambda_function; from tracaus.runtime import TOOL_NAMES, tool_configuration; "
+    "tool_configuration(TOOL_NAMES); print(boto3.__version__)"  # every tool contract is inside the package
+)
 
 # Per target: output dir prefix (.build/<dir>-a and -b), builder(output), the statement run under
 # `python -S` inside the extracted ZIP, the determinism error text and an optional PASS note.
@@ -48,6 +51,7 @@ TARGETS = {
             check=True,
         ),
         "import": "import boto3,lambda_function; from tracaus.metrics import catalog; "
+        "from tracaus.runtime import TOOL_NAMES, tool_configuration; tool_configuration(TOOL_NAMES); "
         "assert isinstance(catalog(),list); print(boto3.__version__)",
         "mismatch": "Independent builds do not match",
     },
@@ -55,6 +59,7 @@ TARGETS = {
         "dir": "ecs-tools",
         "build": build_with_ecs,
         "import": "import boto3,lambda_function; from tracaus.metrics import ecs_targets; "
+        "from tracaus.runtime import TOOL_NAMES, tool_configuration; tool_configuration(TOOL_NAMES); "
         "assert ecs_targets(); print(boto3.__version__)",
         "mismatch": "Independent ECS tool builds do not match",
     },
@@ -67,7 +72,8 @@ TARGETS = {
     "agentcore": {
         "dir": "agentcore",
         "build": lambda out: build(("incident_investigate",), out, CATALOG, WHEELS, architecture="arm64"),
-        "import": "import boto3,tracaus_agentcore,tracaus.execution,tracaus.runtime; print(boto3.__version__)",
+        "import": "import boto3,tracaus_agentcore,tracaus.execution,tracaus.runtime as r; "
+        "r.tool_configuration(r.TOOL_NAMES); print(boto3.__version__)",
         "mismatch": "AgentCore host builds differ",
         "note": "; live AgentCore boot pending",
     },

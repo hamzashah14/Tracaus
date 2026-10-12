@@ -35,6 +35,16 @@ def abnormal_stop(task):
     return "health check" in reason if code == "ServiceSchedulerInitiated" else True
 
 
+def quotes_abnormal_stop(entry, facts):
+    """True when a cited fact points into a stopped task of this evidence that points at a failure."""
+    tasks = entry["result"].get("stopped_tasks", [])
+    for fact in facts:
+        match = re.match(r"/stopped_tasks/(0|[1-9][0-9]*)/", fact["path"])
+        if match and int(match[1]) < len(tasks) and abnormal_stop(tasks[int(match[1])]):
+            return True
+    return False
+
+
 def dimensions(descriptor):
     values = descriptor.get("dimensions", [])
     if (
@@ -258,18 +268,10 @@ def validate(raw, catalog):
                 len(usable) >= 2 and metric("Availability", lambda v: v == 0, "/Health")
             ):
                 raise ValueError()
-            if finding["kind"] == "task_failure" and not (
-                any(
-                    e["tool"] == "fetch_ecs"
-                    and any(abnormal_stop(t) for t in e["result"].get("stopped_tasks", []))
-                    for e in usable
-                )
-                and any(
-                    f["path"].startswith("/stopped_tasks/")
-                    for f in value["facts"]
-                    if f["evidence_id"] in finding["evidence_ids"]
-                    and entries[f["evidence_id"]]["tool"] == "fetch_ecs"
-                )
+            if finding["kind"] == "task_failure" and not any(
+                e["tool"] == "fetch_ecs"
+                and quotes_abnormal_stop(e, [f for f in value["facts"] if f["evidence_id"] == e["id"]])
+                for e in usable
             ):
                 raise ValueError()
             if finding["kind"] == "contradictory_evidence":

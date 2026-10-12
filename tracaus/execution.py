@@ -150,7 +150,7 @@ def execute(payload, *, store=None, checkpoint=None, local=None, allowed=None, p
                 record_usage=lambda input_tokens, output_tokens: store.record_usage(
                     claim, input_tokens, output_tokens
                 ),
-                required_evidence={"fetch_ecs", "fetch_metrics"} if ecs else {"fetch_logs", "fetch_metrics"},
+                required_evidence={"fetch_ecs"} if ecs else {"fetch_logs", "fetch_metrics"},
             )
     elif mode == "chat":
         if set(payload) != {"version", "release", "mode", "prompt", "history"}:

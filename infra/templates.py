@@ -396,7 +396,14 @@ def tools_release(spec, artifacts, secret):
                     [
                         f"arn:aws:ecs:{monitor}:{account}:service/{item['cluster']}/{item['service']}"
                         for item in ecs_services(spec)
-                    ],
+                    ]
+                    # A service created before long ARNs has the short form, without the cluster.
+                    + sorted(
+                        {
+                            f"arn:aws:ecs:{monitor}:{account}:service/{item['service']}"
+                            for item in ecs_services(spec)
+                        }
+                    ),
                 ),
                 statement(
                     ["ecs:ListTasks", "ecs:DescribeTasks"],
