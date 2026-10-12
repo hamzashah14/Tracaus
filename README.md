@@ -8,7 +8,7 @@
 <p align="center">
   <strong>Trace the cause.</strong><br />
   An AI incident investigator for your AWS EC2 and ECS workloads<br />
-  Read-only. Runs in your account. No hosted service. Just <code>streamlit run app.py</code> to try it.
+  Read-only. Runs in your account. No hosted service. Three commands: <code>setup</code>, <code>deploy</code>, <code>ui</code>.
 </p>
 
 <p align="center">
@@ -20,13 +20,14 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> ·
+  <a href="#get-started">Get started</a> ·
+  <a href="#how-it-works">How it works</a> ·
   <a href="#features">Features</a> ·
   <a href="#what-it-reads">What it reads</a> ·
-  <a href="#how-it-works">How it works</a> ·
   <a href="#three-choices">Choices</a> ·
-  <a href="#deploy-to-your-aws-account">Deploy</a> ·
+  <a href="#what-does-it-cost">Cost</a> ·
   <a href="#faq">FAQ</a> ·
+  <a href="#folder-structure">Folders</a> ·
   <a href="#documentation">Docs</a>
 </p>
 
@@ -42,64 +43,74 @@ evidence, and writes a short report that separates what was observed from what i
 guess. You get the alert first and a link to the report when it is ready. You can also ask
 questions in a web chat. You run all of it in your own AWS account.
 
+## Get started
+
+Deploy first, then open the UI: the UI only works once the backend exists. Each command explains what it is doing,
+can be run again, and says what is safe and what to run next if something fails.
+
+**Before you start**
+
+- An AWS account and an AWS profile you can sign in with (SSO or access keys). **Once**, to create three IAM roles,
+  you also need a profile that can create IAM roles and CloudFormation stacks. Skip that if the roles already exist.
+- Amazon Bedrock access to a model that supports tool use and token counting, in the region you choose (or a model
+  API key, see [Three choices](#three-choices)).
+- Running targets in one region: Linux EC2 instances and/or ECS services. EC2 instances publish metrics and logs
+  with the CloudWatch agent, and ECS services log with `awslogs`. `setup` tells you exactly what is missing.
+- 1 to 5 alert email addresses you can open (you confirm subscription emails during `deploy`).
+- macOS or Linux (Windows: WSL), Python 3.12 and Git. Set an AWS Budgets alarm: Tracaus does not create one.
+
+**1. Get the code and run setup**
+
+```bash
+git clone https://github.com/hamzashah14/Tracaus.git && cd Tracaus
+./bin/tracaus setup
+```
+
+The launcher creates `.venv` and installs the verified dependencies first. `setup` reads your running EC2 instances
+and ECS services (read-only), asks which to watch, asks for the alert emails and the model, creates the three IAM
+roles if they are missing (only after you type `yes`, with an administrator profile it uses once), writes your
+settings to `.local/customer/`, and prints the plan and what is missing on each server. It changes nothing in AWS
+except those roles.
+
+**2. Fix what `setup` reported (your side)**
+
+Install the CloudWatch agent on EC2, ship the logs, turn on `awslogs` for ECS. Tracaus never changes your servers.
+The generated agent files are in `.local/customer/collector-examples/`; steps are in [SERVERS.md](docs/SERVERS.md).
+Missing metrics stop the deployment at its test step, so do this before `deploy`.
+
+**3. Deploy**
+
+```bash
+./bin/tracaus deploy
+```
+
+It checks your permissions (read-only), asks once, then creates the resources and shows each stage as it completes.
+It stops twice for you: a typed `yes` for **one paid model request** (a test through the real tools), and
+confirming the **subscription emails** AWS sends. Nothing is routed to Tracaus before its `routing` stage, so an
+earlier failure leaves your alarms and servers untouched. Run `deploy` again to resume after a stop or a failure, and
+`./bin/tracaus status` any time to see where it is. It never deletes anything.
+
+**4. Open the UI**
+
+```bash
+./bin/tracaus ui
+```
+
+It adds the UI AWS profiles, generates a password (shown once, saved in `.local/customer/ui-password`), and starts the
+UI on `http://127.0.0.1:8501`, on your computer only. Ask questions about your listed servers in the chat, and open
+reports from the alert emails (`?incident=ID` on that address).
+
+**5. Check that it works**
+
+Work through [ACCEPTANCE.md](docs/ACCEPTANCE.md): telemetry, alert delivery, access and recovery. Start simple: break
+something on a staging host and confirm an alarm fires and an alert email arrives. After `deploy`,
+**automatic investigations are paused on purpose**: alerts still go out, and you enable investigations in a later
+release ([DEPLOY.md](docs/DEPLOY.md), section 3.8).
+
+**More than one person using the UI?** Use team mode: each person signs in through your identity provider
+([Three choices](#three-choices), [DEPLOY.md](docs/DEPLOY.md), section 7). Do not host the shared-password UI for others.
+
 > **Status:** locally tested, never run against real AWS. Treat your first deployment as staging.
-
-## Quick Start
-
-You need Python 3.12. The preview needs no AWS account. Create a virtual environment and
-activate it. Every command in this README then works as written, as long as your prompt
-shows `(.venv)`. Run the `source` line again in each new terminal.
-
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --require-hashes -r requirements/app.lock
-cp .env.example .env    # skip this if you already have a .env, and keep yours
-chmod 600 .env
-```
-
-In `.env`, keep `ENVIRONMENT=development` and set `APP_PASSWORD` to a private value
-of at least 12 characters. Then start the UI and open `http://127.0.0.1:8501/`:
-
-```bash
-streamlit run app.py --server.address 127.0.0.1
-```
-
-Sign in with that password. With no backend settings, the UI shows a "Connect your
-runtime" checklist and chat stays disabled. That is expected. The same password
-sign-in is the default mode of a deployed backend; the FAQ explains what it does and
-does not protect.
-
-### Try it against your own CloudWatch (no deployment)
-
-<details>
-<summary>Steps and limits</summary>
-
-For development, the UI can run its two read-only tools (`fetch_logs`, `fetch_metrics`) in
-its own process with your AWS credentials. You skip the tool Lambdas and `infra.deploy.automation`.
-
-1. Write the one-file tool config: copy `examples/local-tools.example.json` and edit it, or
-   generate it from a `deployment.json` (the shape of `examples/deployment.example.json`).
-   Generating makes no AWS call and will not overwrite a file without `--force`:
-   `mkdir -p .local && python scripts/make_local_tools.py --spec deployment.json --out .local/local-tools.json`
-2. In `.env`, set `TRACAUS_LOCAL_TOOLS=.local/local-tools.json`, `APP_PASSWORD`, `BEDROCK_REGION`,
-   `BEDROCK_MODEL_ID` and `EXPECTED_ACCOUNT_ID`. Keep `ENVIRONMENT=development` and the prefilled
-   `RUNTIME_LIMITS`. Leave `LOGS_TOOL_ARN`, `METRICS_TOOL_ARN` and `RUNTIME_RELEASE` empty.
-3. Use a read-only AWS profile (`AWS_PROFILE` in `.env`, or an SSO sign-in) with
-   `logs:DescribeLogGroups`, `logs:StartQuery` (billable), `logs:GetQueryResults`,
-   `logs:StopQuery`, `cloudwatch:GetMetricStatistics`, and `bedrock:InvokeModel` and
-   `bedrock:CountTokens` on your model. Tracaus does not check that it matches `EXPECTED_ACCOUNT_ID`.
-4. Run `streamlit run app.py --server.address 127.0.0.1` and sign in. "Connection details"
-   shows "Local tools (this machine's AWS credentials)".
-
-**Limits.** The tools read log groups named `<log_prefix>/<instance-id>/<suffix>`, the
-layout of the agent file in [SERVERS.md](docs/SERVERS.md), and the groups you list under
-`existing_log_groups` ([SERVERS.md](docs/SERVERS.md#use-log-groups-that-already-exist)). Any other
-group, such as `/aws/lambda/...`, is out of reach. The UI process holds your read credentials, so Tracaus's checks run in code and
-IAM does not back them up. Keep the UI on `127.0.0.1`. Use the deployed tools for anything
-shared or production. This mode has never run against real AWS either, and it covers EC2 instances only.
-
-</details>
 
 ## Features
 
@@ -199,26 +210,6 @@ Pass `--team-file` to the UI launcher for team mode. Set `model_provider` in
 `deployment.json` for a Model API. The [deployment guide](docs/DEPLOY.md) covers both.
 The Model API option has never run against a live provider, and diagnosis quality
 on non-Claude models is unmeasured.
-
-## Deploy to your AWS account
-
-Three commands. Each one explains what it is doing, step by step, and can be run again.
-
-```bash
-./bin/tracaus setup    # read your account, ask a few questions, write the settings, show the plan
-./bin/tracaus deploy   # check permissions, create the resources with live progress, handle each stop
-./bin/tracaus ui       # open the UI on http://127.0.0.1:8501
-```
-
-- `setup` reads your running EC2 instances and ECS services (read-only), asks which to watch, and tells you what
-  is still missing on each server or task. Installing the CloudWatch agent and shipping logs stays your job.
-- You need an administrator-level AWS profile **once**, only to create the three IAM roles (if they do not exist
-  yet). `setup` asks before it does that, and never uses that profile again. `deploy` and `ui` run as the roles.
-- `deploy` never routes anything to Tracaus before its `routing` stage, stops for the paid model request and for the
-  subscription emails, and never deletes anything. `./bin/tracaus status` shows where it is at any time.
-
-Needs macOS or Linux (Windows: WSL), Python 3.12, Git and a clean checkout. Full guide, flags and the manual
-commands behind these three: [deployment guide](docs/DEPLOY.md).
 
 ## What does it cost?
 
@@ -332,14 +323,67 @@ Where code runs: **`tracaus/` and `lambda/` run in your AWS account and in the U
 your computer (or your servers, for the heartbeat).** [CONTRIBUTING.md](CONTRIBUTING.md#where-each-file-fits)
 says what each file does.
 
+## Try it without deploying (development only)
+
+Only want to see the UI, or chat against your own CloudWatch without deploying anything? This is for development; for
+real use, follow [Get started](#get-started).
+
+You need Python 3.12 and no AWS account for the preview. Create a virtual environment and activate it (run the
+`source` line again in each new terminal):
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --require-hashes -r requirements/app.lock
+cp .env.example .env    # skip this if you already have a .env, and keep yours
+chmod 600 .env
+```
+
+In `.env`, keep `ENVIRONMENT=development` and set `APP_PASSWORD` to a private value of at least 12 characters. Then
+run `streamlit run app.py --server.address 127.0.0.1` and open `http://127.0.0.1:8501/`. With no backend settings the UI
+shows a "Connect your runtime" checklist and chat stays disabled. That is expected.
+
+### Try it against your own CloudWatch (no deployment)
+
+<details>
+<summary>Steps and limits</summary>
+
+For development, the UI can run its two read-only tools (`fetch_logs`, `fetch_metrics`) in
+its own process with your AWS credentials. You skip the tool Lambdas and `infra.deploy.automation`.
+
+1. Write the one-file tool config: copy `examples/local-tools.example.json` and edit it, or
+   generate it from a `deployment.json` (the shape of `examples/deployment.example.json`).
+   Generating makes no AWS call and will not overwrite a file without `--force`:
+   `mkdir -p .local && python scripts/make_local_tools.py --spec deployment.json --out .local/local-tools.json`
+2. In `.env`, set `TRACAUS_LOCAL_TOOLS=.local/local-tools.json`, `APP_PASSWORD`, `BEDROCK_REGION`,
+   `BEDROCK_MODEL_ID` and `EXPECTED_ACCOUNT_ID`. Keep `ENVIRONMENT=development` and the prefilled
+   `RUNTIME_LIMITS`. Leave `LOGS_TOOL_ARN`, `METRICS_TOOL_ARN` and `RUNTIME_RELEASE` empty.
+3. Use a read-only AWS profile (`AWS_PROFILE` in `.env`, or an SSO sign-in) with
+   `logs:DescribeLogGroups`, `logs:StartQuery` (billable), `logs:GetQueryResults`,
+   `logs:StopQuery`, `cloudwatch:GetMetricStatistics`, and `bedrock:InvokeModel` and
+   `bedrock:CountTokens` on your model. Tracaus does not check that it matches `EXPECTED_ACCOUNT_ID`.
+4. Run `streamlit run app.py --server.address 127.0.0.1` and sign in. "Connection details"
+   shows "Local tools (this machine's AWS credentials)".
+
+**Limits.** The tools read log groups named `<log_prefix>/<instance-id>/<suffix>`, the
+layout of the agent file in [SERVERS.md](docs/SERVERS.md), and the groups you list under
+`existing_log_groups` ([SERVERS.md](docs/SERVERS.md#use-log-groups-that-already-exist)). Any other
+group, such as `/aws/lambda/...`, is out of reach. The UI process holds your read credentials, so Tracaus's checks run in code and
+IAM does not back them up. Keep the UI on `127.0.0.1`. Use the deployed tools for anything
+shared or production. This mode has never run against real AWS either, and it covers EC2 instances only.
+
+</details>
+
 ## Documentation
 
-1. [Prerequisites](docs/PREREQUISITES.md): what must exist and be decided before you run the deploy tool.
-2. [Deployment guide](docs/DEPLOY.md): prerequisites, costs, setup, optional team mode and Model API.
-3. [Server setup](docs/SERVERS.md): CloudWatch agent, heartbeat and Nginx on your hosts, and ECS services.
-4. [Operations](docs/OPERATE.md): incidents, replay, recipients, rotation, erasure, restore.
-5. [Architecture](docs/ARCHITECTURE.md): components, workflows and a glossary.
-6. [Live acceptance](docs/ACCEPTANCE.md): the checklist to complete before relying on it.
+In the order you need them:
+
+1. [Prerequisites](docs/PREREQUISITES.md): everything that must exist or be decided before you deploy, with a quick checklist.
+2. [Server setup](docs/SERVERS.md): the CloudWatch agent, heartbeat and Nginx on EC2, and ECS services.
+3. [Deployment guide](docs/DEPLOY.md): the three commands in detail, the manual commands behind them, team mode, Model API and AgentCore.
+4. [Live acceptance](docs/ACCEPTANCE.md): the checklist to complete before relying on a deployment.
+5. [Operations](docs/OPERATE.md): incidents, replay, recipients, rotation, erasure, restore, rollback.
+6. [Architecture](docs/ARCHITECTURE.md): components, workflows and a glossary.
 7. [Diagnostic evaluations](evaluations/diagnostics/README.md): synthetic cases and optional paid model tests.
 
 ## Community
