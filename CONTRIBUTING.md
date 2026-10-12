@@ -34,8 +34,7 @@ privately ([SECURITY.md](SECURITY.md)), never in public issues.
 - *Investigation:* `runtime.py` (the model loop with limits), `diagnosis.py` (evidence into a report that separates
   facts from guesses), `metrics.py`, `nginx.py`, `model_api.py` (a non-Bedrock model), `agentcore.py` and
   `agentcore_host.py` (AgentCore hosting), `cursor.py`, `tool_deadline.py`, `transport.py` (size and time limits).
-- *UI and chat:* `chat.py`, `config.py`, `team.py` (team-mode allowlist), `local_tools.py` (development chat),
-  `work_policy.py`.
+- *UI and chat:* `chat.py`, `config.py`, `team.py` (team-mode allowlist), `local_tools.py` (development chat).
 - *Safety and utility:* `safety.py` (redaction), `time.py`.
 - *Optional observers:* `observability.py`, `observation_config.py`, `probes.py`.
 

@@ -16,7 +16,7 @@ from infra.stacks import owned_runtime
 from scripts.dev import evaluate_diagnostics
 from tests.test_owned_runtime import BASE, SPEC, bindings
 from tests.test_runtime import answer, drive
-from tracaus import diagnosis, runtime, safety, work_policy
+from tracaus import diagnosis, runtime, safety
 
 IID = "i-0123456789abcdef0"
 
@@ -640,7 +640,7 @@ def test_default_chat_budget_allows_full_corroborated_hang_with_discovery(monkey
     case = copy.deepcopy(
         next(c for c in evaluate_diagnostics.suite()[0]["cases"] if c["id"] == "correlated-hang")
     )
-    policy = runtime.Limits(**work_policy.DEFAULT["chat_limits"])
+    policy = runtime.Limits(**evaluate_diagnostics.CHAT_LIMITS)
     budget = runtime.MemoryBudget(policy)
     tools = evaluate_diagnostics.FixtureTools(case["catalog"], budget.reserve)
     turns = []
@@ -691,7 +691,7 @@ def test_default_chat_budget_allows_full_corroborated_hang_with_discovery(monkey
 
 
 def test_fixture_tool_rejects_cross_scope_and_charges_work_before_returns():
-    policy = runtime.Limits(**work_policy.DEFAULT["chat_limits"])
+    policy = runtime.Limits(**evaluate_diagnostics.CHAT_LIMITS)
     budget = runtime.MemoryBudget(policy)
     case = evaluate_diagnostics.suite()[0]["cases"][0]
     tools = evaluate_diagnostics.FixtureTools(case["catalog"], budget.reserve)

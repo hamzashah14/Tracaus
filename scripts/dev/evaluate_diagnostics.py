@@ -12,7 +12,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from infra.maintain.security_ops import private_write  # noqa: E402
-from tracaus import diagnosis, model_api, runtime, safety, work_policy  # noqa: E402
+from tracaus import diagnosis, model_api, runtime, safety  # noqa: E402
+
+# What a default chat request may spend; the controls assert a full investigation fits.
+CHAT_LIMITS = {
+    "tokens_reserved": 24000,
+    "model_steps": 6,
+    "tool_calls": 6,
+    "log_queries": 12,
+    "output_tokens": 1024,
+}
 
 
 def suite():
@@ -138,10 +147,7 @@ def live(model, region, repeats, token_budget):
         raise ValueError("Select 3–5 repetitions and 2,048–100,000 total reserved tokens")
     data, sha = suite()
     policy = runtime.Limits(
-        **{
-            **work_policy.DEFAULT["chat_limits"],
-            "tokens_reserved": min(work_policy.DEFAULT["chat_limits"]["tokens_reserved"], token_budget),
-        }
+        **{**CHAT_LIMITS, "tokens_reserved": min(CHAT_LIMITS["tokens_reserved"], token_budget)}
     )
     total = EvaluationBudget(token_budget)
     client = model_api.from_env() or runtime.sdk_client("bedrock-runtime", region)
