@@ -116,7 +116,10 @@ class ConsolePrompter(Prompter):
 
     def ask(self, key, question, default=None, validate=None):
         self._ready(key)
-        default = self.defaults.get(key, default) if isinstance(self.defaults.get(key, ""), str) else default
+        stored = self.defaults.get(key)
+        if isinstance(stored, list) and all(isinstance(item, str) for item in stored):
+            stored = ", ".join(stored)  # a list answer (alert emails) is offered again as one line
+        default = stored if isinstance(stored, str) else default
         for _ in range(MAX_TRIES):
             self.console.say(
                 f"\n{question}" + (f"  [default: {default}]" if default not in (None, "") else "")
@@ -187,6 +190,8 @@ class ConsolePrompter(Prompter):
         return chosen
 
     def confirm(self, key, question, default=False, consent=None):
+        if consent and consent in self.allowed:  # the flag on the command line is the consent
+            return True
         self._ready(key)
         if isinstance(self.defaults.get(key), bool) and not consent:
             default = self.defaults[key]

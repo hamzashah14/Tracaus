@@ -125,3 +125,22 @@ def test_explain_prints_the_four_parts():
         "Next: run setup again",
     ):
         assert part in value
+
+
+class Strict(io.StringIO):
+    """A terminal that cannot show non-ASCII text."""
+
+    encoding = "ascii"
+
+    def write(self, text):
+        text.encode("ascii")
+        return super().write(text)
+
+
+def test_non_ascii_names_never_crash_the_output():
+    out = Strict()
+    console = Console(out)
+    console.say("service café")
+    console.ok("café done")
+    console.secret_line("café")
+    assert "caf" in out.getvalue()

@@ -75,6 +75,11 @@ def _tagged(stack):
     return OWNER_TAG in stack.get("Tags", [])
 
 
+_MAYBE_RUNNING = (
+    "The stack {name} may still be creating in AWS and keeps running by itself. Run setup again to watch it."
+)
+
+
 def deploy_roles(
     clients,
     spec,
@@ -90,6 +95,7 @@ def deploy_roles(
     """Create the role stack with the administrator profile behind `clients`. Returns `created` or `exists`."""
     region, name = spec["monitor_region"], stack_name(spec)
     cfn = clients("cloudformation", region)
+    started = False  # True once AWS may be building the stack: from then on "nothing was changed" is not true
     try:
         stack = _describe(cfn, name)
         if stack is not None:
@@ -100,6 +106,7 @@ def deploy_roles(
             if status == "ROLLBACK_COMPLETE":
                 _reset(cfn, name, stack, console, prompter, poll, timeout, sleep, clock)
             elif status.endswith("_IN_PROGRESS"):
+                started = True
                 console.info(f"The role stack {name} is already changing ({status}); watching it.")
                 _wait(cfn, name, console, poll, timeout, sleep, clock)
                 return "created"
@@ -111,6 +118,7 @@ def deploy_roles(
         console.say(
             f"Creating the role stack {name} in {region}. CloudFormation undoes it by itself if it fails."
         )
+        started = True
         cfn.create_stack(
             StackName=name,
             TemplateBody=json.dumps(template),
@@ -122,10 +130,16 @@ def deploy_roles(
         return "created"
     except BotoCoreError as error:
         raise RolesError(
-            f"Could not reach AWS ({type(error).__name__}). Nothing was changed by this step."
+            f"Could not reach AWS ({type(error).__name__}). "
+            + (_MAYBE_RUNNING.format(name=name) if started else "Nothing was changed by this step.")
         ) from None
     except ClientError as error:
         code = error.response.get("Error", {}).get("Code", "Unknown")
+        if started:
+            raise RolesError(
+                f"AWS answered {code} while the role stack was being created. "
+                + _MAYBE_RUNNING.format(name=name)
+            ) from None
         raise RolesError(
             f"AWS refused the role stack request ({code}). Nothing was created. The profile you picked must be allowed "
             "to create CloudFormation stacks and IAM roles, or ask an administrator to run the printed command."
@@ -205,12 +219,12 @@ def _failure(cfn, name, status):
 
 def verify_operator(make_identity, role_arn, console, *, attempts=12, delay=5, sleep=time.sleep):
     """After creation IAM needs a moment. Wait until the operator profile really assumes the operator role."""
-    expected = f"assumed-role/{role_arn.rsplit('/', 1)[-1]}/"
+    expected = f"arn:aws:sts::{role_arn.split(':')[4]}:assumed-role/{role_arn.rsplit('/', 1)[-1]}/"
     last = "no attempt was made"
     for number in range(attempts):
         try:
             arn = make_identity()["Arn"]
-            if expected in arn:
+            if arn.startswith(expected):
                 return
             raise RolesError(
                 "The operator profile does not assume the operator role. Check role_arn and source_profile."
@@ -224,7 +238,8 @@ def verify_operator(make_identity, role_arn, console, *, attempts=12, delay=5, s
             sleep(delay)
     raise RolesError(
         f"The operator profile cannot assume the operator role yet ({last}). The roles exist. Your sign-in must be "
-        "named in the role's trust policy; see the trust the wizard showed, then run setup again."
+        "named in the operator role's trust policy (IAM console, the role, Trust relationships), or, if the roles "
+        "were made by someone else, ask them to add it. Then run setup again."
     )
 
 
@@ -232,6 +247,10 @@ def profile_block(name, role_arn, source_profile, region):
     """One profile section, validated so no value can add a line or another section."""
     if not PROFILE.fullmatch(name) or name == "default" or not PROFILE.fullmatch(source_profile):
         raise RolesError("A profile name is not valid.")
+    if name == source_profile:
+        raise RolesError(
+            "The profile that assumes the role cannot be the role's own profile. Pick your normal sign-in profile."
+        )
     if not ROLE_ARN.fullmatch(role_arn) or not REGION.fullmatch(region or ""):
         raise RolesError("A role ARN or region is not valid.")
     return f"[profile {name}]\nrole_arn = {role_arn}\nsource_profile = {source_profile}\nregion = {region}\n"
@@ -267,7 +286,7 @@ def write_profiles(path, blocks, *, now=None):
                 result["unchanged"].append(name)
                 continue
             updated = pattern.sub(lambda _: wrapped, updated, count=1)
-        elif re.search(rf"^\[profile {re.escape(name)}\]\s*$", updated, re.M):
+        elif re.search(rf"^\[profile {re.escape(name)}\]\s*(?:[#;].*)?$", updated, re.M):
             result["skipped"].append(name)
             continue
         else:
@@ -298,6 +317,10 @@ def write_profiles(path, blocks, *, now=None):
         temporary.unlink(missing_ok=True)
     if not _matches(real, applied):
         real.write_text(text)
+        if result["backup"]:
+            Path(result["backup"]).unlink(
+                missing_ok=True
+            )  # the original is back; the copy would only confuse
         raise RolesError("The AWS config did not read back as written; the original was restored.")
     return result
 
@@ -312,6 +335,6 @@ def _matches(path, blocks):
     for block in blocks:
         name = re.match(r"\[profile ([^\]]+)\]", block)[1]
         wanted = dict(line.split(" = ", 1) for line in block.splitlines()[1:])
-        if name in profiles and any(profiles[name].get(k) != v for k, v in wanted.items()):
+        if name not in profiles or any(profiles[name].get(k) != v for k, v in wanted.items()):
             return False
     return True

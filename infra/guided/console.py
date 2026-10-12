@@ -79,6 +79,14 @@ class Console:
             finally:
                 os.close(fd)
 
+    def _write(self, line):
+        """Print one line. A terminal that cannot show a character gets a replacement, never a crash."""
+        try:
+            print(line, file=self.stream, flush=True)
+        except UnicodeEncodeError:
+            encoding = getattr(self.stream, "encoding", None) or "ascii"
+            print(line.encode(encoding, "replace").decode(encoding), file=self.stream, flush=True)
+
     def _paint(self, text, code):
         return f"\x1b[{code}m{text}\x1b[0m" if self.color else text
 
@@ -87,7 +95,7 @@ class Console:
             line = clean(raw, 400)
             head = prefix if number == 0 else " " * len(prefix)
             shown = f"{indent}{self._paint(head, code) if code and number == 0 else head} {line}".rstrip()
-            print(shown, file=self.stream, flush=True)
+            self._write(shown)
             self._log(f"{head} {line}")
 
     @property
@@ -107,7 +115,7 @@ class Console:
         """Announce a step, then report how long it took, or that it failed (the error is re-raised)."""
         self.number += 1
         label = f"[{self.number}/{self.total}]" if self.total else "[-]"
-        print("", file=self.stream)
+        self._write("")
         self._emit(label, text, "1")
         started = self.clock()
         try:
@@ -133,16 +141,16 @@ class Console:
         """A plain line, for statements before a change and for summaries."""
         for raw in str(text).split("\n"):
             line = clean(raw, 400, collapse=False)
-            print(line, file=self.stream, flush=True)
+            self._write(line)
             self._log(line)
 
     def secret_line(self, text):
         """Show a secret once on the terminal. It is cleaned for the terminal but never written to the log."""
-        print(clean(text, 400), file=self.stream, flush=True)
+        self._write(clean(text, 400))
 
     def explain(self, what, cause, safe, next_step):
         """The standard failure block: what failed, why, what is safe, and what to do."""
-        print("", file=self.stream)
+        self._write("")
         self._emit(self.marks["fail"], what, "31", indent="")
         for label, value in (("Cause", cause), ("Safe", safe), ("Next", next_step)):
             if value:

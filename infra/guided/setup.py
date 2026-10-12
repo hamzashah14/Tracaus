@@ -6,18 +6,18 @@ yes. Every step announces what it is about to do and what it found."""
 import dataclasses
 import json
 import re
+import shlex
 import sys
 import time
 from pathlib import Path
 
-import boto3
 import botocore.session
 
 from infra.automation import factory, private_json
 from infra.guided import discover
 from infra.guided import files as guided_files
 from infra.guided import roles as guided_roles
-from infra.guided.common import ROUTING_STAGE, STAGES, GuidedError, aws_env
+from infra.guided.common import ROUTING_STAGE, STAGES, GuidedError, aws_env, parse_json_object
 from infra.guided.common import run as run_process
 from infra.guided.console import clean
 from infra.guided.prompt import (
@@ -62,7 +62,7 @@ def default_region(profile):
 
 
 def default_identity(profile):
-    return lambda: boto3.Session(profile_name=profile).client("sts").get_caller_identity()
+    return lambda: factory(profile)("sts", None).get_caller_identity()  # same timeouts as every other call
 
 
 def _matching(pattern, message):
@@ -132,6 +132,7 @@ class Setup:
         self.work_dir = Path(work_dir)
         self.config_path = config_path
         self.facts = {"agent": {}, "groups": {}}
+        self.claimed_groups = set()  # ECS log groups already given to a selected service
         self.ec2, self.ecs, self.profile, self.region, self.account, self.caller = (
             [],
             [],
@@ -190,7 +191,7 @@ class Setup:
             else:
                 self.console.ok("The checkout is clean")
             wheels = self.root / ".build" / "wheels"
-            if self.options.skip_install or any(wheels.glob("*.whl")):
+            if self.options.skip_install or (wheels / ".complete").exists():
                 self.console.ok("The Lambda packages are already downloaded")
                 return
             self.console.say(
@@ -219,6 +220,9 @@ class Setup:
                     "Nothing in AWS was touched.",
                     "Check the network or proxy, then run setup again (it continues from here).",
                 )
+            (wheels / ".complete").write_text(
+                "ok\n"
+            )  # an interrupted download is not mistaken for a finished one
             self.console.ok("Downloaded the Lambda packages")
 
     # ------------------------------------------------------------------ 2 identity
@@ -476,15 +480,23 @@ class Setup:
                     ),
                 }
         groups = []
-        if item["log_groups"]:
+        offered = [g for g in item["log_groups"][:8] if g not in self.claimed_groups]
+        for shared in item["log_groups"][:8]:
+            if shared in self.claimed_groups:
+                self.console.warn(
+                    f"{label}: log group {clean(shared, 90)} is already used by another selected service. "
+                    "A log group is read whole, so it can belong to one service only; it is left out here."
+                )
+        if offered:
             groups = self.prompter.pick_many(
                 f"ecs_logs:{key}",
                 f"Log groups to read for {label} (read whole)",
-                [(g, clean(g, 90)) for g in item["log_groups"][:8]],
+                [(g, clean(g, 90)) for g in offered],
                 minimum=0,
                 maximum=8,
-                default=tuple(item["log_groups"][:8]),
+                default=tuple(offered),
             )
+            self.claimed_groups.update(groups)
         return {
             "id": guided_files.ecs_id(item["service"], taken),
             "label": label,
@@ -638,8 +650,15 @@ class Setup:
         }
 
     def _save_answers(self):
+        """Merge this run's answers over the saved ones. A deployment that already started keeps its answers."""
+        if (self.work_dir / "state.json").exists():
+            return
+        try:
+            previous = json.loads((self.work_dir / "answers.json").read_text())
+        except (OSError, ValueError):
+            previous = {}
         record = {k: v for k, v in self.prompter.record.items() if k != "admin_profile"}
-        private_json(self.work_dir / "answers.json", record)
+        private_json(self.work_dir / "answers.json", {**previous, **record})
 
     # ------------------------------------------------------------------ 6 roles
 
@@ -666,7 +685,7 @@ class Setup:
                     default=False,
                 ):
                     return
-            if "found" in states.values() and not self._stack_present():
+            if "found" in states.values() and self._stack_present() is False:
                 raise GuidedError(
                     "Only some of the three roles exist",
                     "the role template creates all three, so it would fail on the ones that exist",
@@ -676,11 +695,12 @@ class Setup:
             self._create_roles(arns)
 
     def _stack_present(self):
+        """True or False when the stack can be looked up, None when this read-only profile cannot tell."""
         try:
             cfn = self.clients_for(self.profile)("cloudformation", self.region)
             return guided_roles._describe(cfn, guided_roles.stack_name(self.spec)) is not None
         except Exception:  # noqa: BLE001 - any failure to look means we cannot tell
-            return False
+            return None
 
     def _create_roles(self, arns):
         trust, warning = guided_roles.trust_for(self.caller)
@@ -741,7 +761,7 @@ class Setup:
     def _hand_over(self, template_path, stack, arns):
         self.console.say(
             "Nothing was created. Ask an administrator to run this once:\n"
-            f"  aws cloudformation deploy --template-file {template_path} --stack-name {stack} "
+            f"  aws cloudformation deploy --template-file {shlex.quote(str(template_path))} --stack-name {stack} "
             f"--capabilities CAPABILITY_NAMED_IAM --region {self.region} --profile ADMIN_PROFILE"
         )
         for _ in range(20):
@@ -749,9 +769,17 @@ class Setup:
                 "roles_check", "Has an administrator created them? Check now?", default=False
             ):
                 break
-            if set(guided_roles.plan_roles(self.clients_for(self.profile), arns).values()) == {"found"}:
+            states = guided_roles.plan_roles(self.clients_for(self.profile), arns)
+            if set(states.values()) == {"found"}:
                 self.console.ok("All three roles exist now")
                 return
+            if "unknown" in states.values():
+                self.console.warn("This profile cannot read IAM, so Tracaus cannot see the roles itself.")
+                if self.prompter.confirm(
+                    "roles_confirmed", "Did the administrator confirm all three roles exist?", default=False
+                ):
+                    return
+                continue
             self.console.warn("They are not all there yet.")
         raise GuidedError(
             "Waiting for the IAM roles",
@@ -763,8 +791,14 @@ class Setup:
 
     def _wait_for_roles(self, arns):
         for _ in range(12):
-            if set(guided_roles.plan_roles(self.clients_for(self.profile), arns).values()) == {"found"}:
+            states = guided_roles.plan_roles(self.clients_for(self.profile), arns)
+            if set(states.values()) == {"found"}:
                 self.console.ok("All three roles exist")
+                return
+            if "unknown" in states.values():
+                self.console.warn(
+                    "This profile cannot read IAM; 'deploy' verifies the roles itself. Continuing."
+                )
                 return
             self.sleep(5)
         self.console.warn("The roles were created but are not visible yet; continuing.")
@@ -849,7 +883,7 @@ class Setup:
                     "Fix the settings named above and run setup again.",
                 )
             try:
-                summary = json.loads(output[output.index("{") :])
+                summary = parse_json_object(output)
                 plan_hash = summary["plan_hash"]
             except (ValueError, KeyError):
                 raise GuidedError(

@@ -2,6 +2,7 @@
 (argument lists only, never a shell)."""
 
 import contextlib
+import json
 import os
 import subprocess
 
@@ -62,6 +63,15 @@ def run(argv, *, cwd=None, env=None, timeout=900):
     except OSError as error:
         return 127, f"could not start the program ({type(error).__name__})"
     return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+
+def parse_json_object(text):
+    """The first JSON object in a program's output, ignoring anything printed before or after it."""
+    start = text.index("{")
+    value, _ = json.JSONDecoder().raw_decode(text[start:])
+    if not isinstance(value, dict):
+        raise ValueError("not an object")
+    return value
 
 
 @contextlib.contextmanager

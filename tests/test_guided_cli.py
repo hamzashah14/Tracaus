@@ -234,3 +234,35 @@ def test_the_module_help_runs():
         check=False,
     )
     assert done.returncode == 0 and "setup" in done.stdout
+
+
+def test_status_and_ui_do_not_wait_for_a_running_deploy(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "private_dir", lambda path: tmp_path)
+    with guided_lock(tmp_path):  # a deploy is running in this folder
+        assert cli.main(["status", "--work-dir", str(tmp_path)]) == 0
+        assert cli.main(["deploy", "--work-dir", str(tmp_path)]) == 1  # but a second deploy is refused
+    assert "Another guided command" in capsys.readouterr().out
+
+
+def test_the_retry_flag_is_separate_from_the_first_paid_flag(tmp_path):
+    console = Console(io.StringIO())
+    both = cli.prompter_for(parse("deploy", "--allow-paid-canary"), console, tmp_path).allowed
+    assert both == {"paid-canary"}
+    retry = cli.prompter_for(parse("deploy", "--allow-paid-canary-retry"), console, tmp_path).allowed
+    assert retry == {"paid-canary-retry"}
+
+
+def test_a_saved_password_that_is_empty_or_short_is_refused_and_the_write_is_whole(work, tmp_path):
+    (work / "ui-password").write_text("")
+    os.chmod(work / "ui-password", 0o600)
+    with pytest.raises(GuidedError, match="too short or empty"):
+        run_ui(work, tmp_path)
+    (work / "ui-password").unlink()
+    run_ui(work, tmp_path)
+    assert not (work / "ui-password.tmp").exists() and len((work / "ui-password").read_text().strip()) >= 12
+
+
+def test_profile_errors_in_ui_are_explained_not_unexpected(work, tmp_path):
+    (work / "answers.json").write_text(json.dumps({"profile": "tracaus-staging-ui-principal"}))
+    with pytest.raises(GuidedError, match="could not be set up"):
+        run_ui(work, tmp_path)

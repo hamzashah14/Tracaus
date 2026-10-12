@@ -573,3 +573,67 @@ def test_roles_that_cannot_all_be_read_ask_instead_of_guessing(tmp_path):
     fake.denied("iam", "get_role", "AccessDenied")
     fake.on("iam", "get_role", role(ROLE_ARNS[2]))
     assert setup.run() == 0
+
+
+def test_answers_from_an_earlier_run_survive_a_run_that_stops_early(tmp_path):
+    setup, fake, _, work = make(tmp_path)
+    (work / "answers.json").write_text(json.dumps({"emails": ["old@example.com"], "keep": 1}))
+    fake.on("sts", "get_caller_identity", {"UserId": "U", "Account": ACCOUNT, "Arn": USER})
+    fake.on("ec2", "describe_instances", {"Reservations": []})
+    fake.on("ecs", "list_clusters", {"clusterArns": []})
+    with pytest.raises(GuidedError):
+        setup.run()
+    saved = json.loads((work / "answers.json").read_text())
+    assert saved["keep"] == 1 and saved["emails"] == ["old@example.com"] and saved["profile"] == "default"
+
+
+def test_a_started_deployment_keeps_its_answers(tmp_path):
+    setup, fake, _, work = make(tmp_path, {"profile": "default"})
+    (work / "answers.json").write_text(json.dumps({"profile": "original"}))
+    (work / "state.json").write_text("{}")
+    prime(fake)
+    with pytest.raises(GuidedError):
+        setup.run()
+    assert json.loads((work / "answers.json").read_text()) == {"profile": "original"}
+
+
+def test_a_log_group_already_given_to_another_service_is_left_out_with_a_note(tmp_path):
+    setup, _, out, _ = make(tmp_path)
+    setup.claimed_groups = {"/ecs/shared"}
+    item = {
+        "cluster": "prod",
+        "service": "blue",
+        "launch_type": "FARGATE",
+        "container_insights": False,
+        "log_groups": ["/ecs/shared"],
+        "other_log_drivers": [],
+        "target_groups": [],
+        "notes": [],
+        "load_balancer": "none",
+        "alb": None,
+    }
+    setup.prompter = ScriptedPrompter({"alb:prod/blue": False})
+    entry = setup._ask_service(item, set())
+    assert entry["log_groups"] == [] and "already used by another selected service" in out.getvalue()
+
+
+def test_the_wheelhouse_marker_decides_whether_to_download(tmp_path):
+    runner = Runner()
+    calls = []
+
+    def recording(argv, **kwargs):
+        calls.append(argv)
+        return (0, "") if "pip" in argv else runner(argv, **kwargs)
+
+    for marker, expected in ((False, True), (True, False)):
+        folder = tmp_path / str(marker)
+        (folder / ".build" / "wheels").mkdir(parents=True)
+        (folder / ".build" / "wheels" / "x.whl").write_text("partial")
+        if marker:
+            (folder / ".build" / "wheels" / ".complete").write_text("ok")
+        calls.clear()
+        setup, fake, _, _ = make(folder, runner=recording)
+        setup.options.skip_install = False
+        setup.root = folder
+        setup.step_computer()
+        assert any("pip" in c for c in calls) is expected

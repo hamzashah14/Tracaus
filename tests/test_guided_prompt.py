@@ -182,3 +182,21 @@ def test_scripted_prompter_consumes_tuples_in_order():
     with pytest.raises(NeedsAnswer):
         prompter.ask("email", "?")
     assert prompter.ask("project", "?") == "tracaus" and prompter.ask("project", "?") == "tracaus"
+
+
+def test_a_flag_is_the_consent_even_at_a_terminal():
+    prompter, out = console_prompter([], allowed={"paid-canary"}, tty=False)
+    assert prompter.confirm("canary", "Spend money?", consent="paid-canary") is True
+    other, _ = console_prompter(["yes"], allowed={"paid-canary"})
+    assert other.confirm("retry", "Spend more?", consent="paid-canary-retry") is True  # typed yes still works
+
+
+def test_a_list_answer_is_offered_again_as_one_line():
+    out = io.StringIO()
+    prompter = ConsolePrompter(
+        Console(out),
+        defaults={"emails": ["a@example.com", "b@example.com"]},
+        stdin=Tty(),
+        input_fn=lambda _: "",
+    )
+    assert prompter.ask("emails", "Emails?") == "a@example.com, b@example.com"

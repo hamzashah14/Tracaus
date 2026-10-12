@@ -65,7 +65,8 @@ def ec2_instances(clients, region):
     """Running and stopped instances. Windows instances are listed but not supported."""
     ec2 = clients("ec2", region)
     pages = ec2.get_paginator("describe_instances").paginate(
-        Filters=[{"Name": "instance-state-name", "Values": ["running", "stopped"]}]
+        Filters=[{"Name": "instance-state-name", "Values": ["running", "stopped"]}],
+        PaginationConfig={"MaxItems": MAX_INSTANCES + 1},  # lazy: no page beyond the cap is requested
     )
     items, skipped, capped = [], 0, False
     try:
@@ -146,10 +147,11 @@ def log_group_candidates(clients, region, instance_ids, group_limit=100, call_li
     found = {instance: [] for instance in instance_ids}
     try:
         groups = []
-        for page in _reach(lambda: list(logs.get_paginator("describe_log_groups").paginate())):
+        pages = logs.get_paginator("describe_log_groups").paginate(
+            PaginationConfig={"MaxItems": group_limit + 1}  # lazy: no page beyond the cap is requested
+        )
+        for page in _reach(lambda: list(pages)):
             groups += [g["logGroupName"] for g in page.get("logGroups", []) if "logGroupName" in g]
-            if len(groups) > group_limit:
-                break
         capped = len(groups) > group_limit
         groups, calls = groups[:group_limit], 0
         for group in groups:
@@ -177,7 +179,13 @@ def ecs_services(clients, region):
     try:
         arns = [
             arn
-            for page in _reach(lambda: list(ecs.get_paginator("list_clusters").paginate()))
+            for page in _reach(
+                lambda: list(
+                    ecs.get_paginator("list_clusters").paginate(
+                        PaginationConfig={"MaxItems": MAX_CLUSTERS + 1}
+                    )
+                )
+            )
             for arn in page.get("clusterArns", [])
         ]
         if len(arns) > MAX_CLUSTERS:
@@ -191,14 +199,26 @@ def ecs_services(clients, region):
                 insights[cluster["clusterName"]] = setting.get("containerInsights") in {"enabled", "enhanced"}
         definitions = {}
         for name in sorted(insights):
+            if len(items) >= MAX_SERVICES:
+                capped = True
+                break
             if not ECS_NAME.fullmatch(name):
                 continue
             service_arns = [
                 arn
-                for page in _reach(lambda: list(ecs.get_paginator("list_services").paginate(cluster=name)))
+                for page in _reach(
+                    lambda: list(
+                        ecs.get_paginator("list_services").paginate(
+                            cluster=name, PaginationConfig={"MaxItems": MAX_SERVICES + 1}
+                        )
+                    )
+                )
                 for arn in page.get("serviceArns", [])
             ]
             for start in range(0, len(service_arns), 10):
+                if len(items) >= MAX_SERVICES:
+                    capped = True
+                    break
                 batch = _reach(ecs.describe_services, cluster=name, services=service_arns[start : start + 10])
                 for service in batch.get("services", []):
                     if service.get("status") != "ACTIVE" or not ECS_NAME.fullmatch(

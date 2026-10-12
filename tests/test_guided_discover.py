@@ -387,3 +387,15 @@ def test_log_groups_exist_is_exact_and_tolerates_denial(fake):
     result = discover.log_groups_exist(fake, REGION, ["/ecs/orders", "/ecs/other", "/ecs/x", "bad name"])
     assert result == {"/ecs/orders": True, "/ecs/other": False, "/ecs/x": None, "bad name": None}
     fake.done()
+
+
+def test_a_big_account_is_not_paged_through_to_the_end(fake):
+    for number in range(4):
+        page = {"logGroups": [{"logGroupName": f"/g/{number}a"}, {"logGroupName": f"/g/{number}b"}]}
+        fake.on("logs", "describe_log_groups", {**page, "nextToken": f"t{number}"} if number < 3 else page)
+    result = discover.log_group_candidates(fake, REGION, [ID1], group_limit=3, call_limit=0)
+    assert result["capped"] is True
+    with pytest.raises(
+        AssertionError
+    ):  # responses nobody asked for are still queued: later pages were never fetched
+        fake.done()

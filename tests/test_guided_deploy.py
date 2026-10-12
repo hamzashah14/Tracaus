@@ -227,7 +227,9 @@ def test_unconfirmed_emails_stop_with_code_two(work):
 
 def test_an_expired_canary_is_a_second_paid_call_and_retry_is_used_once(work):
     episodes = [waiting(PAID), waiting(EXPIRED), waiting(EMAILS), ready_episode()]
-    deploy, popen, _, _ = make(work, episodes, {**ANSWERS, "paid_canary": True, "emails_done": True})
+    deploy, popen, _, _ = make(
+        work, episodes, {**ANSWERS, "paid_canary": True, "paid_retry": True, "emails_done": True}
+    )
     assert deploy.run() == 0
     third, fourth = popen.calls[2], popen.calls[3]
     assert "--retry-canary" in third and "--allow-model-invocation" in third
@@ -363,27 +365,53 @@ def test_a_journal_from_another_plan_is_not_reused(work):
 
 
 def test_blocked_permissions_are_listed_and_nothing_is_applied(work):
-    (work / "preflight.json").write_text(
-        json.dumps(
-            {
-                "blockers": [
-                    {
-                        "action": "iam:PassRole",
-                        "resource": "arn:aws:iam::1:role/x",
-                        "decision": "implicitDeny",
-                    }
-                ]
-            }
-        )
-    )
-    deploy, popen, _, _ = make(work, [ready_episode()], ANSWERS, runner=Runner(check=1))
+    report = {
+        "blockers": [
+            {"action": "iam:PassRole", "resource": "arn:aws:iam::1:role/x", "decision": "implicitDeny"}
+        ]
+    }
+
+    class Writing(Runner):
+        def __call__(self, argv, **kwargs):
+            if "check" in argv:
+                (work / "preflight.json").write_text(json.dumps(report))
+            return super().__call__(argv, **kwargs)
+
+    deploy, popen, _, _ = make(work, [ready_episode()], ANSWERS, runner=Writing(check=1))
     with pytest.raises(GuidedError) as error:
         deploy.run()
-    assert (
-        "iam:PassRole" in error.value.cause
-        and "AdministratorAccess" in error.value.next_step
-        and popen.calls == []
+    assert "iam:PassRole" in error.value.cause and "AdministratorAccess" in error.value.next_step
+    assert popen.calls == []
+
+
+def test_a_stale_blocker_list_is_never_shown_and_the_real_message_is(work):
+    (work / "preflight.json").write_text(json.dumps({"blockers": [{"action": "old:Action"}]}))
+
+    class Failing(Runner):
+        def __call__(self, argv, **kwargs):
+            if "check" in argv:
+                return 1, "Wrong AWS account for the configured profile\n"
+            return super().__call__(argv, **kwargs)
+
+    deploy, popen, _, _ = make(work, [ready_episode()], ANSWERS, runner=Failing())
+    with pytest.raises(GuidedError) as error:
+        deploy.run()
+    assert "old:Action" not in error.value.cause and "Wrong AWS account" in error.value.cause
+
+
+def test_agreeing_to_the_first_paid_request_never_covers_a_second(work):
+    episodes = [waiting(PAID), waiting(EXPIRED)]
+    deploy, popen, _, _ = make(work, episodes, ANSWERS, allowed={"paid-canary"})
+    with pytest.raises(Refused, match="--allow-paid-canary-retry"):
+        deploy.run()
+    assert len(popen.calls) == 2 and "--retry-canary" not in popen.calls[1]
+    deploy, popen, _, _ = make(
+        work,
+        [waiting(PAID), waiting(EXPIRED), ready_episode()],
+        ANSWERS,
+        allowed={"paid-canary", "paid-canary-retry"},
     )
+    assert deploy.run() == 0 and "--retry-canary" in popen.calls[2]
 
 
 def test_skip_check_skips_only_the_read_only_check(work):

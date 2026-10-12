@@ -413,3 +413,51 @@ def test_the_config_really_parses_with_botocore(tmp_path):
     profiles = load_config(str(path))["profiles"]
     assert profiles["tracaus-operator"]["role_arn"] == ARNS["operator"]
     assert profiles["tracaus-ui"]["source_profile"] == "my-sso"
+
+
+def test_a_profile_cannot_be_its_own_source():
+    with pytest.raises(RolesError, match="own profile"):
+        profile_block("tracaus-staging-operator", ARNS["operator"], "tracaus-staging-operator", REGION)
+
+
+def test_a_header_with_a_trailing_comment_is_an_existing_profile_and_the_file_is_untouched(tmp_path):
+    path = tmp_path / "config"
+    path.write_text("[profile tracaus-operator]  # mine\nrole_arn = arn:aws:iam::1:role/theirs\n")
+    result = write_profiles(path, [block()])
+    assert result["skipped"] == ["tracaus-operator"] and not list(tmp_path.glob("config.tracaus-backup*"))
+
+
+def test_a_restored_edit_leaves_no_stray_backup(tmp_path, monkeypatch):
+    path = tmp_path / "config"
+    path.write_text("[default]\nregion = eu-west-1\n")
+    monkeypatch.setattr(guided_roles, "_matches", lambda *a: False)
+    with pytest.raises(RolesError):
+        write_profiles(path, [block()])
+    assert not list(tmp_path.glob("config.tracaus-backup*"))
+
+
+def test_the_read_back_requires_the_profile_to_be_present(tmp_path):
+    path = tmp_path / "config"
+    path.write_text("[default]\nregion = eu-west-1\n")
+    assert guided_roles._matches(path, [block()]) is False
+
+
+def test_an_operator_in_another_account_is_not_accepted():
+    out_console, _ = console()
+    other = "arn:aws:sts::999999999999:assumed-role/tracaus-staging-operator/s"
+    with pytest.raises(RolesError, match="does not assume"):
+        verify_operator(lambda: {"Arn": other}, ARNS["operator"], out_console, sleep=lambda _: None)
+
+
+def test_an_error_after_the_stack_was_requested_never_claims_nothing_was_created(fake, spec):
+    fake.denied("cloudformation", "describe_stacks", "ValidationError", MISSING)
+    fake.on(
+        "cloudformation",
+        "create_stack",
+        {"StackId": "arn:aws:cloudformation:eu-central-1:123456789012:stack/x/1"},
+    )
+    fake.denied("cloudformation", "describe_stack_events", "Throttling")
+    fake.denied("cloudformation", "describe_stacks", "Throttling")
+    with pytest.raises(RolesError) as error:
+        run(fake, spec)
+    assert "may still be creating" in str(error.value) and "Nothing was created" not in str(error.value)

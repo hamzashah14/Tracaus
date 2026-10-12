@@ -9,6 +9,7 @@ import dataclasses
 import json
 import os
 import secrets
+import shlex
 import subprocess
 import sys
 import threading
@@ -20,7 +21,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from infra.automation import factory, private_json
 from infra.guided import roles as guided_roles
-from infra.guided.common import ROUTING_STAGE, STAGES, GuidedError, aws_env, run
+from infra.guided.common import ROUTING_STAGE, STAGES, GuidedError, aws_env, parse_json_object, run
 from infra.guided.console import clean
 from infra.spec import ROOT
 
@@ -144,7 +145,7 @@ class Deploy:
                     "Fix the settings named above (or run setup again).",
                 )
             try:
-                summary = json.loads(output[output.index("{") :])
+                summary = parse_json_object(output)
             except ValueError:
                 raise GuidedError(
                     "The plan output could not be read", "", "Nothing was changed.", "Run setup again."
@@ -172,7 +173,7 @@ class Deploy:
                         "the journal belongs to a different plan",
                         "Nothing was deleted; the earlier journal is kept.",
                         "Start the next release: python -m infra.automation refresh --from-dir "
-                        f"{self.work_dir} --work-dir {self.work_dir}-r2",
+                        f"{shlex.quote(str(self.work_dir))} --work-dir {shlex.quote(str(self.work_dir) + '-r2')}",
                     )
                 done = sum(1 for s in state.get("stages", {}).values() if s.get("status") == "COMPLETE")
                 self.console.info(f"Resuming: {done} of {len(self.stages)} stages are already complete.")
@@ -184,7 +185,9 @@ class Deploy:
             if self.options.skip_check:
                 self.console.warn("Skipped (--skip-check). 'apply' repeats the permission check itself.")
                 return
-            code, _ = self.runner(
+            for stale in ("preflight.json", "error.json"):  # never show a blocker list from an earlier run
+                (self.work_dir / stale).unlink(missing_ok=True)
+            code, output = self.runner(
                 self._command("check"), cwd=self.root, env=aws_env(self.profile), timeout=900
             )
             if code == 0:
@@ -200,9 +203,11 @@ class Deploy:
                 lines.append(
                     f"AWS {clean(error.get('operation'))} failed with {clean(error.get('error_code'))}"
                 )
+            if not lines:  # the check stopped before it could write a report: show what it said
+                lines = [clean(line, 200) for line in output.strip().splitlines()[-4:] if line.strip()]
             raise GuidedError(
                 "The permission check found problems",
-                "; ".join(lines) or "see preflight.json in the work folder",
+                "; ".join(lines) or "the check printed nothing; see operations.log in the work folder",
                 "Nothing was changed in AWS: the check only reads.",
                 "Ask your security administrator to grant what is listed (do not use AdministratorAccess), "
                 "or check that the operator profile works. Then run deploy again.",
@@ -332,8 +337,11 @@ class Deploy:
             )
         if STOP_EXPIRED in message or STOP_AMBIGUOUS in message:
             return self._paid(
-                "The earlier paid test is no longer valid. Running it again is a SECOND paid model request. Do it?",
+                "The earlier paid test is no longer valid, or its outcome is unknown (it may already have been billed). "
+                "Running it again is a SECOND paid model request. Do it?",
                 ["--retry-canary"],
+                consent="paid-canary-retry",
+                key="paid_retry",
             )
         if STOP_EMAILS in message:
             self.console.say(
@@ -359,9 +367,11 @@ class Deploy:
             code=2,
         )
 
-    def _paid(self, question, once):
-        """Ask for the paid step. The permission flag stays for later rounds; `once` flags are used one time."""
-        if not self.prompter.confirm("paid_canary", question, consent="paid-canary"):
+    def _paid(self, question, once, consent="paid-canary", key="paid_canary"):
+        """Ask for a paid step. A retry has its own consent, so agreeing to the first request never covers a second.
+
+        The permission flag stays for later rounds; `once` flags are used one time."""
+        if not self.prompter.confirm(key, question, consent=consent):
             raise GuidedError(
                 "Stopped before the paid model request",
                 "you did not agree to it",
@@ -384,7 +394,8 @@ class Deploy:
         cause = " | ".join(part for part in [error, *reasons, *tail[-4:]] if part) or "no detail was recorded"
         if "Configuration/source changed" in error or "Source revision changed" in error:
             next_step = (
-                f"python -m infra.automation refresh --from-dir {self.work_dir} --work-dir {self.work_dir}-r2, "
+                f"python -m infra.automation refresh --from-dir {shlex.quote(str(self.work_dir))} "
+                f"--work-dir {shlex.quote(str(self.work_dir) + '-r2')}, "
                 "then run setup against the new folder."
             )
         elif any("Required metric unavailable" in line for line in tail + [error]):
@@ -533,19 +544,27 @@ def launch_ui(
         )
     console.begin(1 if team_file else 2)
     with console.step("Preparing the UI profile"):
-        name, blocks = ui_profiles(spec, connection, source, spec["monitor_region"])
-        path = Path(config_path) if config_path else guided_roles.config_path()
-        if prompter.confirm(
-            "write_ui_profiles", f"Add the profile '{name}' to {path}? (a backup is kept)", default=True
-        ):
-            result = guided_roles.write_profiles(path, blocks)
-            for skipped in result["skipped"]:
-                console.warn(
-                    f"A profile named {skipped} already exists outside Tracaus's markers; left unchanged."
-                )
-            console.ok("UI profile ready")
-        else:
-            console.say("Add these yourself:\n" + "\n".join(blocks))
+        try:
+            name, blocks = ui_profiles(spec, connection, source, spec["monitor_region"])
+            path = Path(config_path) if config_path else guided_roles.config_path()
+            if prompter.confirm(
+                "write_ui_profiles", f"Add the profile '{name}' to {path}? (a backup is kept)", default=True
+            ):
+                result = guided_roles.write_profiles(path, blocks)
+                for skipped in result["skipped"]:
+                    console.warn(
+                        f"A profile named {skipped} already exists outside Tracaus's markers; left unchanged."
+                    )
+                console.ok("UI profile ready")
+            else:
+                console.say("Add these yourself:\n" + "\n".join(blocks))
+        except guided_roles.RolesError as error:
+            raise GuidedError(
+                "The UI profile could not be set up",
+                str(error),
+                "The AWS config was not changed.",
+                "Add the two profiles by hand (docs/DEPLOY.md, section 4).",
+            ) from None
     env = {}
     if not team_file:
         with console.step("Setting the UI password"):
@@ -594,12 +613,27 @@ def _password(console, prompter, work_dir, prompt):
                 "Nothing was changed.",
                 f"Run: chmod 600 {path}  (or delete it to get a new password)",
             )
+        value = path.read_text().strip()
+        if len(value) < 12:
+            raise GuidedError(
+                "The saved password is too short or empty",
+                f"{path.name} must hold 12 or more characters",
+                "Nothing was changed.",
+                f"Delete {shlex.quote(str(path))} to get a new password.",
+            )
         console.ok(f"Using the saved password in {path.name} (mode 600)")
-        return path.read_text().strip()
+        return value
     value = secrets.token_urlsafe(15)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "w") as stream:
-        stream.write(value + "\n")
+    temporary = path.with_name(path.name + ".tmp")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(value + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)  # the file appears whole or not at all
+    finally:
+        temporary.unlink(missing_ok=True)
     console.ok(f"Created a password and saved it in {path.name} (mode 600). It is shown once, here:")
     console.secret_line(f"    {value}")
     return value

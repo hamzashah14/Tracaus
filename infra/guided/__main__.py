@@ -38,6 +38,11 @@ def parser():
     common.add_argument(
         "--allow-paid-canary", action="store_true", help="agree, without asking, to the paid model request"
     )
+    common.add_argument(
+        "--allow-paid-canary-retry",
+        action="store_true",
+        help="also agree, without asking, to a SECOND paid request after an expired or unclear first one",
+    )
     setup = commands.add_parser(
         "setup", parents=[common], help="read the account, ask the rest, write the settings"
     )
@@ -62,6 +67,8 @@ def prompter_for(args, console, directory):
     allowed = {"iam-bootstrap"} if args.allow_iam_bootstrap else set()
     if args.allow_paid_canary:
         allowed.add("paid-canary")
+    if args.allow_paid_canary_retry:
+        allowed.add("paid-canary-retry")
     if args.answers:
         return AnswersPrompter(args.answers, allowed)
     if args.yes:
@@ -102,8 +109,10 @@ def main(argv=None):
         return 1
     console.open_log(directory / "guided.log")
     try:
-        with guided_lock(directory):
-            return dispatch(args, console, directory)
+        if args.command in {"setup", "deploy"}:  # status and ui never block them (or each other)
+            with guided_lock(directory):
+                return dispatch(args, console, directory)
+        return dispatch(args, console, directory)
     except GuidedError as error:
         console.explain(error.what, error.cause, error.safe, error.next_step)
         return error.code
@@ -127,7 +136,8 @@ def main(argv=None):
         console.explain(
             "Could not reach AWS",
             str(error),
-            "Nothing was changed.",
+            "Files are written whole or not at all. If setup had already started the IAM role stack, it keeps "
+            "running in AWS: run setup again to watch it.",
             "Check the network, the profile and that you are signed in (aws sso login).",
         )
         return 1

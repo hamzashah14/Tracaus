@@ -89,7 +89,8 @@ source or setting needs a new release (`refresh`, section 3.9). To roll back or 
 | `--work-dir PATH` | Where the settings live (under `.local/`) |
 | `--answers FILE` | Replay an `answers.json` without asking; stops on any missing answer |
 | `--yes` | Accept defaults. It never answers IAM or paid questions |
-| `--allow-iam-bootstrap`, `--allow-paid-canary` | Consent, without asking, to creating the roles or the paid model request |
+| `--allow-iam-bootstrap`, `--allow-paid-canary` | Consent, without asking, to creating the roles or the first paid model request |
+| `--allow-paid-canary-retry` | Separate consent to a SECOND paid request after an expired or unclear first one. `--allow-paid-canary` never covers it |
 | `--admin-profile NAME` | `setup`: the profile that may create the IAM roles |
 | `--skip-install`, `--skip-check` | `setup`: skip the package download. `deploy`: skip the read-only permission check |
 | `--team-file FILE`, `--password-prompt` | `ui`: team mode, or type the password instead of generating one |
