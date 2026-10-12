@@ -407,33 +407,6 @@ def test_team_hourly_limit_is_shared_by_a_person_across_sessions(team_mode, monk
     assert any("hourly" in item.value for item in second.info)
 
 
-@pytest.mark.parametrize("name", ["KIRA_AUTH_MODE", "CHAT_FUNCTION_ARN", "KIRA_SESSION_TABLE"])
-def test_a_connection_from_the_removed_identity_module_stops_the_app(settings, monkeypatch, name):
-    monkeypatch.setenv(name, "oidc")
-    test = app(False)
-    test.query_params["incident"] = "a" * 32
-    test.run()
-    assert not test.exception and not test.text_input and not test.chat_input
-    assert any("removed identity module" in item.value for item in test.error)
-    assert not test.info  # not even the incident lookup ran
-
-
-@pytest.mark.parametrize(
-    "name",
-    ["KIRA_TEAM_FILE", "KIRA_LOCAL_TOOLS", "ARGUS_TEAM_FILE", "ARGUS_LOCAL_TOOLS", "ARGUS_DIAGNOSTIC_POLICY"],
-)
-def test_a_setting_with_the_old_project_name_stops_the_app(settings, monkeypatch, name):
-    monkeypatch.setenv(name, "/srv/team.toml")
-    test = app(False)
-    test.query_params["incident"] = "a" * 32
-    test.run()
-    assert not test.exception and not test.text_input and not test.chat_input
-    message = " ".join(item.value for item in test.error)
-    assert name in message and "TRACAUS_" in message
-    assert "/srv/team.toml" not in message  # names only, never values
-    assert not test.info
-
-
 def test_team_refused_retry_keeps_the_conversation(team_mode, monkeypatch):
     team_mode(extra="[limits]\nchat_per_user_per_hour = 2\n")
     monkeypatch.setattr(chat, "invoke", Mock(return_value=chat.failure("REQUEST_FAILED", "failed")))

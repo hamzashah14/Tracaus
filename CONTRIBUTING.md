@@ -88,30 +88,3 @@ Credentials, real inventory, logs, cloud responses and private work records belo
 in ignored storage (`.local/`, `.env`), never in issues, pull requests, screenshots
 or fixtures. Check `git diff --cached` before committing. `.gitignore` only stops
 future additions; removing a tracked file does not remove it from earlier commits.
-
-## Prepare a clean public repository
-
-Review the README, guides, MIT license, dependency licenses and CI first. If your
-working repository has private history, export a fresh snapshot instead of pushing it:
-
-```bash
-python scripts/dev/prepare_public_repo.py --output .local/publication
-```
-
-The script needs committed source with no uncommitted tracked changes. It runs the
-secret and public-file checks, then copies only the pinned commit's regular files into
-a new repository with one initial commit on `main`, no history and no remote. Ignored
-and untracked files are not copied, and an existing destination is never overwritten.
-Review the snapshot and run its checks, then connect an empty GitHub repository
-(replace the example owner and name):
-
-```bash
-cd .local/publication
-git remote add origin git@github.com:YOUR_ACCOUNT/YOUR_REPOSITORY.git
-ssh -T git@github.com    # exits nonzero even on success; the greeting must name the intended account
-git push -u origin main
-```
-
-Do not force-push over an existing repository; review any remote history separately.
-Turn on branch protection, required CI and GitHub private vulnerability reporting,
-and keep public claims consistent with the live-acceptance status.

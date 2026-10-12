@@ -637,3 +637,31 @@ def test_the_wheelhouse_marker_decides_whether_to_download(tmp_path):
         setup.root = folder
         setup.step_computer()
         assert any("pip" in c for c in calls) is expected
+
+
+def test_a_failed_operator_check_shows_who_the_role_trusts(tmp_path):
+    bad = identity_of(ACCOUNT, f"arn:aws:sts::{ACCOUNT}:assumed-role/other/s")
+    setup, fake, out, _ = make(tmp_path, identity=bad)
+    prime(fake)
+    document = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"AWS": [f"arn:aws:iam::{ACCOUNT}:user/someone-else"]},
+                "Action": "sts:AssumeRole",
+            }
+        ],
+    }
+    fake.on(
+        "iam",
+        "get_role",
+        {"Role": {**role(ROLE_ARNS[0])["Role"], "AssumeRolePolicyDocument": json.dumps(document)}},
+    )
+    with pytest.raises(GuidedError, match="operator profile does not work"):
+        setup.run()
+    text = out.getvalue()
+    assert (
+        f"The operator role trusts: arn:aws:iam::{ACCOUNT}:user/someone-else" in text
+        and "You are signed in as" in text
+    )

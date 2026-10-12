@@ -959,7 +959,6 @@ def test_default_deploy_reaches_the_canary_without_a_ticket(tmp_path, monkeypatc
     assert not any("identity" in c or "chat" in c for c in driver.calls)
     connection = json.loads((directory / "ui-connection.json").read_text())
     assert set(connection) == {"environment", "ui_role_arn"}
-    assert "KIRA_AUTH_MODE" not in connection["environment"]
     assert (
         automation.deploy(planned, directory, driver, allow_model=True)["status"]
         == "INFRASTRUCTURE_READY_MANUAL_ACCEPTANCE_PENDING"

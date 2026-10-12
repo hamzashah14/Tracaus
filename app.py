@@ -1,7 +1,6 @@
 """Customer-operated Tracaus web client. Run with: streamlit run app.py."""
 
 import hmac
-import os
 import time
 import uuid
 from pathlib import Path
@@ -86,23 +85,6 @@ if (
 ):
     sign_out()
     st.session_state.session_expired = True
-
-if any(os.getenv(name) for name in ("KIRA_AUTH_MODE", "CHAT_FUNCTION_ARN", "KIRA_SESSION_TABLE")):
-    # A connection from the removed identity module must not fall back to the shared password.
-    st.error(
-        "This connection comes from the removed identity module, so per-person access is no longer "
-        "enforced. Re-run apply with the new settings and start the UI with --team-file (docs/DEPLOY.md section 7)."
-    )
-    st.stop()
-
-if renamed := sorted(name for name in os.environ if name.startswith(("KIRA_", "ARGUS_"))):
-    # Earlier names of this project. An old KIRA_TEAM_FILE or ARGUS_TEAM_FILE is ignored now, which would
-    # silently start the shared-password mode.
-    st.error(
-        f"{', '.join(renamed)} must be renamed: the project is now called Tracaus, so every KIRA_ or ARGUS_ "
-        "setting is now TRACAUS_ (for example ARGUS_TEAM_FILE is TRACAUS_TEAM_FILE). Nothing started."
-    )
-    st.stop()
 
 member = None
 roster = None

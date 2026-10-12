@@ -10,6 +10,7 @@ import shlex
 import sys
 import time
 from pathlib import Path
+from urllib.parse import unquote
 
 import botocore.session
 
@@ -847,6 +848,7 @@ class Setup:
                     sleep=self.sleep,
                 )
             except guided_roles.RolesError as error:
+                self._show_trust(roles["operator"])
                 raise GuidedError(
                     "The operator profile does not work yet",
                     str(error),
@@ -855,6 +857,26 @@ class Setup:
                 ) from None
             self.profile_ready = True
             self.console.ok("The operator role can be assumed")
+
+    def _show_trust(self, role_arn):
+        """Say who the operator role trusts, when this profile may read it, so the user can see what is missing."""
+        try:
+            iam = self.clients_for(self.profile)("iam", self.region)
+            document = iam.get_role(RoleName=role_arn.rsplit("/", 1)[-1])["Role"]["AssumeRolePolicyDocument"]
+            if isinstance(document, str):
+                document = json.loads(unquote(document))
+            statements = document.get("Statement", [])
+            statements = statements if isinstance(statements, list) else [statements]
+            principals = []
+            for statement in statements:
+                value = (statement.get("Principal") or {}).get("AWS", [])
+                principals += [value] if isinstance(value, str) else list(value)
+            self.console.info(
+                "The operator role trusts: " + (", ".join(clean(p, 90) for p in principals) or "nobody")
+            )
+            self.console.info(f"You are signed in as: {clean(self.caller.get('arn', ''), 120)}")
+        except Exception:  # noqa: BLE001 - this is a hint only; any failure to read it just skips the hint
+            self.console.info("Could not read the operator role's trust policy with this profile.")
 
     # ------------------------------------------------------------------ 8 plan
 

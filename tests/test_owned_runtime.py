@@ -80,7 +80,7 @@ def test_default_mode_has_no_identity_and_every_execution_host_accepts_both_purp
     config = {**BASE, "runtime_target": target}
     stages = examples(SPEC, config)
     env = owned_runtime.environment(SPEC, config, bindings(target=target))
-    assert env["EXECUTION_PURPOSE"] == "both" and "KIRA_AUTH_MODE" not in env
+    assert env["EXECUTION_PURPOSE"] == "both"
     assert (
         stages["durable-runtime"]["Resources"]["Investigate"]["Properties"]["Environment"]["Variables"][
             "EXECUTION_PURPOSE"
