@@ -5,15 +5,16 @@ import json
 import re
 import time
 
-from infra import durable, observation_templates, owned_ops
-from infra.spec import fallback_recipients, log_groups, metric_catalog, name, recipients
-from infra.verify import (
+from infra.deploy import durable, owned_ops
+from infra.deploy.verify import (
     PendingConfirmation,
     VerificationError,
     assert_account,
     awaiting_confirmation,
     verify_function,
 )
+from infra.spec import fallback_recipients, log_groups, metric_catalog, name, recipients
+from infra.stacks import observation_templates
 from scripts.build_lambdas import OBSERVATION_FUNCTIONS, build
 from tracaus.ledger import item
 from tracaus.observability import recipient_fingerprint
@@ -86,7 +87,7 @@ def seed_health(bundle, factory):
     """Explicit customer operation before promotion; never activates schedules."""
     if bundle["spec"]["reference_only"]:
         raise VerificationError("Synthetic reference cannot seed cloud observations")
-    from infra.durable_ops import require_reviewed_source
+    from infra.deploy.durable_ops import require_reviewed_source
 
     require_reviewed_source(bundle)
     spec = bundle["spec"]

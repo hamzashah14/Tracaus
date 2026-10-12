@@ -261,7 +261,11 @@ def test_a_failure_before_routing_says_nothing_was_touched(work):
     (work / "operations.log").write_text("coverage start\nRequired metric unavailable: i-0abc-memory\n")
     deploy, _, _, _ = make(
         work,
-        [failed("infra.durable_ops failed; inspect private operations.log", done=["foundation-tools"])],
+        [
+            failed(
+                "infra.deploy.durable_ops failed; inspect private operations.log", done=["foundation-tools"]
+            )
+        ],
         ANSWERS,
     )
     with pytest.raises(GuidedError) as error:

@@ -14,7 +14,7 @@ from urllib.parse import unquote
 
 import botocore.session
 
-from infra.automation import factory, private_json
+from infra.deploy.automation import factory, private_json
 from infra.guided import discover
 from infra.guided import files as guided_files
 from infra.guided import roles as guided_roles
@@ -886,7 +886,7 @@ class Setup:
                 [
                     sys.executable,
                     "-m",
-                    "infra.automation",
+                    "infra.deploy.automation",
                     "dry-run",
                     "--config",
                     str(self.work_dir / "automation.json"),

@@ -8,8 +8,8 @@ from pathlib import Path
 import boto3
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from infra.deploy.verify import VerificationError, assert_account  # noqa: E402
 from infra.spec import load, name  # noqa: E402
-from infra.verify import VerificationError, assert_account  # noqa: E402
 from tracaus.ledger import Ledger  # noqa: E402
 
 

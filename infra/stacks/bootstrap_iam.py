@@ -4,11 +4,11 @@ An AWS administrator deploys it once. It makes the three roles named in `deploym
 (operator, CloudFormation execution, UI workload) and, on request, an instance role for the
 CloudWatch agent. Permissions are scoped by the project-environment name prefix, so the
 roles can only touch resources whose names start with it. The resource strings match the
-permission screen in `infra.deployment_preflight`, so `check` can confirm the result.
+permission screen in `infra.deploy.deployment_preflight`, so `check` can confirm the result.
 """
 
 from infra.spec import ecs_services, prefix
-from infra.templates import ref
+from infra.stacks.templates import ref
 
 CLOUDFORMATION = "cloudformation.amazonaws.com"
 AGENTCORE = "bedrock-agentcore.amazonaws.com"

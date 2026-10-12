@@ -14,9 +14,9 @@ from pathlib import Path
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from infra import bootstrap_iam
 from infra.guided.console import clean
 from infra.guided.discover import role_state
+from infra.stacks import bootstrap_iam
 
 OWNER_TAG = {"Key": "ManagedBy", "Value": "tracaus-iam-bootstrap"}
 ROLE_ARN = re.compile(r"arn:aws:iam::\d{12}:role/[A-Za-z0-9+=,.@_/-]+")

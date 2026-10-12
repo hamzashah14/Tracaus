@@ -76,7 +76,7 @@ does not protect.
 <summary>Steps and limits</summary>
 
 For development, the UI can run its two read-only tools (`fetch_logs`, `fetch_metrics`) in
-its own process with your AWS credentials. You skip the tool Lambdas and `infra.automation`.
+its own process with your AWS credentials. You skip the tool Lambdas and `infra.deploy.automation`.
 
 1. Write the one-file tool config: copy `examples/local-tools.example.json` and edit it, or
    generate it from a `deployment.json` (the shape of `examples/deployment.example.json`).
@@ -298,6 +298,39 @@ balancers in front of ECS, health probes of private VPC-only endpoints, a deskto
 servers (the telemetry setup is for Linux EC2) and a Model API with AgentCore.
 
 </details>
+
+## Folder structure
+
+```text
+bin/tracaus          the three commands: setup, deploy, status, ui
+app.py               the web UI (Streamlit)
+
+tracaus/             the product. Runs in AWS (inside the Lambdas) and in the UI
+lambda/              thin Lambda entry points; each one calls code in tracaus/
+
+infra/               deployment tooling. Runs on your computer only, never in AWS
+  spec.py            reads and checks your deployment.json
+  guided/            what bin/tracaus runs: discovery, questions, deploy with progress
+  stacks/            writes the CloudFormation templates
+  deploy/            plan, check, apply, verify and seal a release
+  maintain/          day-2 work: retire old resources, change recipients, erase data
+
+scripts/             small helpers: build the Lambda ZIPs, server heartbeat, replay, run the UI
+  dev/               checks for CI and maintainers; users never need these
+
+schemas/ config/     tool contracts and the default metric catalog, shipped inside the Lambdas
+agent-instruction.txt  the prompt the model receives
+examples/            sample deployment.json files that setup and the docs start from
+evaluations/         synthetic diagnostic cases for testing report quality
+docs/                the guides below
+tests/               offline tests (no AWS needed)
+requirements/        hash-pinned dependency locks
+assets/              logo files
+```
+
+Where code runs: **`tracaus/` and `lambda/` run in your AWS account and in the UI. `infra/` and `scripts/` run on
+your computer (or your servers, for the heartbeat).** [CONTRIBUTING.md](CONTRIBUTING.md#where-each-file-fits)
+says what each file does.
 
 ## Documentation
 

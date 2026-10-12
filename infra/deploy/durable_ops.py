@@ -10,10 +10,9 @@ from pathlib import Path
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from infra import durable, durable_templates, owned_ops, reconcile, release, templates
-from infra.aws import clients
-from infra.spec import ROOT, alarm_descriptors, digest, event_rules, name, prefix, tags, tool_bindings
-from infra.verify import (
+from infra.deploy import durable, owned_ops, release
+from infra.deploy.aws import clients
+from infra.deploy.verify import (
     PendingConfirmation,
     VerificationError,
     assert_account,
@@ -22,6 +21,9 @@ from infra.verify import (
     routing_health,
     verify_function,
 )
+from infra.maintain import reconcile
+from infra.spec import ROOT, alarm_descriptors, digest, event_rules, name, prefix, tags, tool_bindings
+from infra.stacks import durable_templates, templates
 
 IMMUTABLE = {
     "durable-runtime",
@@ -145,7 +147,7 @@ def upload(bundle, build_dir, artifact_kind="pipeline"):
     }[artifact_kind]
     assert_stack_absent(clients("cloudformation", region), name(spec, target, True))
     if artifact_kind == "observation":
-        from infra.observations import checked_build
+        from infra.deploy.observations import checked_build
 
         build = checked_build(build_dir, spec)
     elif artifact_kind == "tools":
@@ -463,7 +465,7 @@ def execute(bundle, directory, stage, change_set_id, change_hash, receipt=None, 
     if bundle["source_dirty"]:
         raise VerificationError("Commit reviewed source before execution")
     if stage == "observations":
-        from infra.observations import verify_runtime as verify_observers
+        from infra.deploy.observations import verify_runtime as verify_observers
 
         verify_observers({**bundle, "directory": str(directory)}, clients)
     if stage == "routing":
@@ -536,7 +538,7 @@ def main():
         if args.command == "upload":
             value = upload(bundle, args.build_dir, args.artifact_kind)
         elif args.command == "seed-health":
-            from infra.observations import seed_health
+            from infra.deploy.observations import seed_health
             from tracaus.runtime import sdk_client
 
             value = seed_health(
@@ -546,16 +548,16 @@ def main():
                 ),
             )
         elif args.command == "verify-observations":
-            from infra.observations import verify_runtime
+            from infra.deploy.observations import verify_runtime
 
             value = verify_runtime(bundle, clients)
         elif args.command == "verify-observation-routing":
-            from infra.observations import verify_registration
+            from infra.deploy.observations import verify_registration
 
             value = verify_registration(bundle, clients)
         elif args.command == "attest-email":
             require_reviewed_source(bundle)
-            from infra.observations import attest_email
+            from infra.deploy.observations import attest_email
 
             value = attest_email(bundle, clients, args.notification_id, confirm=args.confirm_inbox_delivery)
         elif args.command == "verify-candidate":

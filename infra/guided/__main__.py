@@ -8,7 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from infra.automation import private_dir
+from infra.deploy.automation import private_dir
 from infra.guided import deploy as guided_deploy
 from infra.guided import setup as guided_setup
 from infra.guided.common import GuidedError, guided_lock

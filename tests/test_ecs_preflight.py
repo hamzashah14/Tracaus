@@ -11,9 +11,10 @@ import pytest
 from botocore.exceptions import ClientError
 from botocore.stub import Stubber
 
-from infra import bootstrap_iam, deployment_preflight, ecs_discover
+from infra.deploy import deployment_preflight, ecs_discover
+from infra.deploy.verify import VerificationError, assert_ecs_inventory, coverage
 from infra.spec import ROOT, load
-from infra.verify import VerificationError, assert_ecs_inventory, coverage
+from infra.stacks import bootstrap_iam
 
 REGION, ACCOUNT = "eu-central-1", "123456789012"
 LB = f"arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:loadbalancer/app/orders-alb/50dc6c495c0c9188"

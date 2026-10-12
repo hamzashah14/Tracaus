@@ -9,8 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from infra import durable_templates, owned_runtime, templates  # noqa: E402
 from infra.spec import TOOL_LOGICAL, load, name, prefix, tool_functions  # noqa: E402
+from infra.stacks import durable_templates, owned_runtime, templates  # noqa: E402
 
 
 def examples(spec, config, *, include_bindings=False):

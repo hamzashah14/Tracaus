@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from infra import templates
 from infra.spec import ROOT, load
+from infra.stacks import templates
 from scripts.dev import validate_durable
 
 CONFIG = json.loads((ROOT / "examples/durable.example.json").read_text())

@@ -4,9 +4,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from infra import durable_ops, owned_runtime
+from infra.deploy import durable_ops
+from infra.deploy.verify import VerificationError
 from infra.spec import ROOT, load
-from infra.verify import VerificationError
+from infra.stacks import owned_runtime
 from scripts.dev.validate_durable import examples
 
 SPEC = load(ROOT / "examples/deployment.example.json")
@@ -33,7 +34,7 @@ def test_agentcore_always_has_deployment_environment_even_without_identity_confi
 
 
 def test_post_promotion_ui_role_trust_and_grants_are_verified(monkeypatch):
-    from infra import durable_templates
+    from infra.stacks import durable_templates
 
     config = BASE
     data = bindings()
@@ -162,7 +163,7 @@ def test_model_api_anthropic_never_emits_bytes_per_token():
 
 
 def test_model_api_renders_every_standalone_caller_without_model_grants():
-    from infra import durable_templates
+    from infra.stacks import durable_templates
 
     spec = api_spec()
     _, _, artifacts, _ = examples(SPEC, BASE, include_bindings=True)

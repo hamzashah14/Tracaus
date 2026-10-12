@@ -138,7 +138,7 @@ def render(results):
 
 
 def main(spec, clients):
-    from infra.verify import VerificationError
+    from infra.deploy.verify import VerificationError
 
     if clients("sts", spec["monitor_region"]).get_caller_identity()["Account"] != spec["account_id"]:
         raise VerificationError("Wrong AWS account; no reads permitted")

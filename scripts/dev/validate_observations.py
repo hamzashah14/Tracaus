@@ -8,8 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from infra import observation_templates  # noqa: E402
 from infra.spec import load, name  # noqa: E402
+from infra.stacks import observation_templates  # noqa: E402
 from scripts.dev.validate_durable import examples  # noqa: E402
 
 

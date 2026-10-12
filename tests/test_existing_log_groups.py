@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from infra import release
+from infra.deploy import release
+from infra.deploy.verify import VerificationError, coverage
 from infra.spec import ROOT, existing_log_groups, load, log_groups, metric_catalog, readable_log_groups
-from infra.verify import VerificationError, coverage
 from scripts.dev.validate_infrastructure import examples
 from scripts.make_local_tools import build as local_file
 from tests.helpers import body, load_lambda

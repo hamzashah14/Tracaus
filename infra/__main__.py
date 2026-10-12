@@ -1,12 +1,12 @@
-"""Build inventory-bound tools; deploy through infra.durable and infra.durable_ops."""
+"""Build inventory-bound tools; deploy through infra.deploy.durable and infra.deploy.durable_ops."""
 
 import argparse
 import sys
 from pathlib import Path
 
-from infra import release
+from infra.deploy import release
+from infra.deploy.verify import VerificationError
 from infra.spec import ecs_targets, existing_log_groups, load, log_groups, metric_catalog, tool_functions
-from infra.verify import VerificationError
 
 
 def main():
@@ -49,8 +49,8 @@ def main():
 
             import boto3
 
-            from infra import ecs_discover
-            from infra.aws import clients
+            from infra.deploy import ecs_discover
+            from infra.deploy.aws import clients
 
             raw = json.loads(args.spec.read_text())
             if args.profile:
@@ -65,7 +65,7 @@ def main():
         return 0
     if args.command == "bootstrap-iam":
         try:
-            from infra import bootstrap_iam
+            from infra.stacks import bootstrap_iam
 
             spec = load(args.spec)
             template = bootstrap_iam.render(

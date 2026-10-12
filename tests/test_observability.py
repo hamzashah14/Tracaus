@@ -10,9 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from infra import observation_templates, observations
+from infra.deploy import observations
+from infra.deploy.verify import PendingConfirmation, VerificationError
 from infra.spec import ROOT, alarm_descriptors, cwagent, load, metric_catalog, name
-from infra.verify import PendingConfirmation, VerificationError
+from infra.stacks import observation_templates
 from tracaus import observability, probes, telemetry
 from tracaus.incident import InvalidEvent, normalize_sns
 from tracaus.ledger import Ledger

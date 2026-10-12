@@ -7,10 +7,11 @@ from unittest.mock import Mock
 import pytest
 from botocore.exceptions import ClientError
 
-from infra import automation, deployment_preflight, durable, owned_runtime
+from infra.deploy import automation, deployment_preflight, durable
+from infra.deploy.verify import PendingConfirmation, VerificationError, routing_health
 from infra.spec import name, prefix, topic_arn
-from infra.templates import service_routing
-from infra.verify import PendingConfirmation, VerificationError, routing_health
+from infra.stacks import owned_runtime
+from infra.stacks.templates import service_routing
 from scripts.dev.validate_durable import examples
 from tests.helpers import ROOT
 
@@ -103,9 +104,9 @@ def test_bad_settings_fail_without_clients(tmp_path, mutation):
     ],
 )
 def test_runtime_config_with_removed_blocks_gets_one_clear_message(tmp_path, extra):
-    from infra import durable
+    from infra.deploy import durable
+    from infra.deploy.verify import VerificationError
     from infra.spec import ROOT, load
-    from infra.verify import VerificationError
 
     config = {**json.loads((ROOT / "examples/durable.example.json").read_text()), **extra}
     path = tmp_path / "runtime.json"
@@ -242,7 +243,7 @@ class FakeDriver(automation.Driver):
         self.calls = []
         self.canaries = 0
         self.subscriptions = confirmed_subscriptions(spec, self.outputs["foundation"]["IngressQueueArn"])
-        from infra import observations, release
+        from infra.deploy import observations, release
         from scripts.build_lambdas import PIPELINE_FUNCTIONS
 
         def manifest(functions):
@@ -293,7 +294,7 @@ class FakeDriver(automation.Driver):
                     logical
                     + "VersionArn": f"arn:aws:lambda:{spec['monitor_region']}:{spec['account_id']}:function:{name(spec, function.replace('_', '-'), True)}:1"
                     for function, logical in __import__(
-                        "infra.observation_templates", fromlist=["FUNCTIONS"]
+                        "infra.stacks.observation_templates", fromlist=["FUNCTIONS"]
                     ).FUNCTIONS.items()
                 }
             if stage == "routing":
@@ -324,7 +325,7 @@ class FakeDriver(automation.Driver):
                 raise VerificationError("Model API key secret has no unique current version")
             return self.outputs["model_secret"]
         if command == "upload":
-            from infra import templates
+            from infra.stacks import templates
 
             kind = kw["artifact_kind"]
             functions = {
@@ -822,7 +823,7 @@ def test_reservation_reconciliation_waits_for_complete_stack(tmp_path, monkeypat
 
 
 def test_operator_wrapper_binds_one_explicit_sdk_session(monkeypatch):
-    from infra import operator
+    from infra.deploy import operator
 
     setup = Mock()
     run = Mock()
@@ -835,7 +836,7 @@ def test_operator_wrapper_binds_one_explicit_sdk_session(monkeypatch):
             "--profile",
             "customer-sso",
             "--module",
-            "infra.durable_ops",
+            "infra.deploy.durable_ops",
             "--",
             "collect",
             "--bundle",
@@ -844,8 +845,13 @@ def test_operator_wrapper_binds_one_explicit_sdk_session(monkeypatch):
     )
     operator.main()
     setup.assert_called_once_with(profile_name="customer-sso")
-    run.assert_called_once_with("infra.durable_ops", run_name="__main__")
-    assert __import__("sys").argv == ["infra.durable_ops", "collect", "--bundle", ".local/customer/bundle"]
+    run.assert_called_once_with("infra.deploy.durable_ops", run_name="__main__")
+    assert __import__("sys").argv == [
+        "infra.deploy.durable_ops",
+        "collect",
+        "--bundle",
+        ".local/customer/bundle",
+    ]
     assert "infra.identity_ops" not in operator.MODULES
 
 
@@ -1291,7 +1297,7 @@ def test_launcher_ignores_a_stray_team_file_variable(tmp_path, monkeypatch):
 
 
 def run_model_secret_op(tmp_path, monkeypatch, secret, *, provider="model_api"):
-    from infra import durable_ops
+    from infra.deploy import durable_ops
 
     planned = configuration(tmp_path, model_api=provider == "model_api")
     spec = {**planned["spec"], "reference_only": False}
@@ -1463,7 +1469,7 @@ def test_every_other_subscription_mismatch_still_fails_closed(tmp_path, monkeypa
 def test_routing_verification_waits_only_after_every_other_check_passed(tmp_path, monkeypatch):
     from collections import defaultdict
 
-    from infra import durable_ops
+    from infra.deploy import durable_ops
 
     spec = {**configuration(tmp_path)["spec"], "reference_only": False}
     queues = {key: "arn:aws:sqs:eu-central-1:123456789012:q" for key in ("Ingress", "Dispatch", "Work")}
@@ -1503,7 +1509,7 @@ def test_routing_verification_waits_only_after_every_other_check_passed(tmp_path
 
 
 def test_pending_exit_code_is_distinct_and_names_config_keys_only(tmp_path, monkeypatch):
-    from infra import durable_ops
+    from infra.deploy import durable_ops
 
     output = tmp_path / "out.json"
     monkeypatch.setattr(
@@ -1546,16 +1552,20 @@ def test_driver_turns_only_the_pending_exit_of_a_durable_operation_into_waiting(
 
     exits(3)
     with pytest.raises(automation.Waiting, match="notification_email and fallback_email") as waiting:
-        driver.command("infra.durable_ops", ["verify-routing"], output)
+        driver.command("infra.deploy.durable_ops", ["verify-routing"], output)
     assert not waiting.value.automatic and "same plan hash" in str(waiting.value)
-    for module, code in (("scripts.build_pipeline", 3), ("infra.durable_ops", 1), ("infra.durable_ops", 2)):
+    for module, code in (
+        ("scripts.build_pipeline", 3),
+        ("infra.deploy.durable_ops", 1),
+        ("infra.deploy.durable_ops", 2),
+    ):
         exits(code)
         with pytest.raises(VerificationError, match="failed"):
             driver.command(module, ["verify-routing"], output)
 
 
 def owned_routing_resources(spec, summaries):
-    from infra import reconcile
+    from infra.maintain import reconcile
 
     cfn = Mock()
     cfn.describe_stacks.return_value = {
@@ -1574,7 +1584,7 @@ def owned_routing_resources(spec, summaries):
 
 
 def test_retirement_plan_accepts_only_the_current_recipients_pending_subscription(tmp_path):
-    from infra import reconcile
+    from infra.maintain import reconcile
     from infra.spec import digest
 
     spec = configuration(tmp_path)["spec"]

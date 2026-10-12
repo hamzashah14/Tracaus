@@ -157,7 +157,7 @@ Commit the reviewed source before `dry-run`. The plan records the commit, so a n
 ### 3.2 Generate the private files
 
 ```bash
-python -m infra.automation init --work-dir .local/customer
+python -m infra.deploy.automation init --work-dir .local/customer
 ```
 
 This makes the folder (mode 700) and three owner-only files (mode 600). It makes no AWS call and
@@ -303,7 +303,7 @@ suffice for every real stack operation is not verified: the template has never b
 ### 3.4 Preview without deploying
 
 ```bash
-python -m infra.automation dry-run --config .local/customer/automation.json --work-dir .local/customer
+python -m infra.deploy.automation dry-run --config .local/customer/automation.json --work-dir .local/customer
 ```
 
 This makes **no AWS calls and no AWS writes**. It validates your files and writes `plan.json`. It
@@ -325,7 +325,7 @@ hash.
 ### 3.5 Check your account (read-only)
 
 ```bash
-python -m infra.automation check --config .local/customer/automation.json --work-dir .local/customer
+python -m infra.deploy.automation check --config .local/customer/automation.json --work-dir .local/customer
 ```
 
 This calls AWS with read-only requests. It checks that you are in the right account and role,
@@ -347,8 +347,8 @@ blocker. Have your security administrator review `preflight.json`. See the AWS n
 `apply` creates billable resources. Read `plan.json` first. Use the hash from your own `dry-run`:
 
 ```bash
-python -m infra.automation apply --config .local/customer/automation.json --work-dir .local/customer --plan-hash YOUR_PLAN_HASH
-python -m infra.automation status --work-dir .local/customer
+python -m infra.deploy.automation apply --config .local/customer/automation.json --work-dir .local/customer --plan-hash YOUR_PLAN_HASH
+python -m infra.deploy.automation status --work-dir .local/customer
 ```
 
 `apply` checks that the hash and the source match, that the checkout is clean and that the preflight
@@ -392,7 +392,7 @@ Never run the same release from two directories at once.
 and plan hash and one more flag:
 
 ```bash
-python -m infra.automation apply --config .local/customer/automation.json --work-dir .local/customer --plan-hash YOUR_PLAN_HASH --allow-model-invocation
+python -m infra.deploy.automation apply --config .local/customer/automation.json --work-dir .local/customer --plan-hash YOUR_PLAN_HASH --allow-model-invocation
 ```
 
 This **spends money**: one bounded model request that calls the staging Investigate function. It
@@ -466,7 +466,7 @@ The server list is part of the release, so any change to it, such as adding or r
 group or a service, is a new release. It is not an edit in place. Start it from the finished one:
 
 ```bash
-python -m infra.automation refresh --from-dir .local/customer --work-dir .local/customer-r2
+python -m infra.deploy.automation refresh --from-dir .local/customer --work-dir .local/customer-r2
 ```
 
 This copies `deployment.json`, `runtime.json` and `automation.json` into the new folder with the release
@@ -545,7 +545,7 @@ public places.
 | --- | --- |
 | "Deployment files must live under ignored .local/", "Init never overwrites existing customer files" | `--work-dir` must be inside `.local/` of this checkout. For a fresh start use a new work directory |
 | "Synthetic reference inputs cannot check/deploy AWS" | `reference_only` is still `true`, or the examples are unchanged |
-| "Deployment failed (ValueError); no success claimed. Inspect private evidence." | A setting in `deployment.json` or `runtime.json` breaks a rule in 3.3, and the automation tool does not say which. Run `python -m infra.durable --spec .local/customer/deployment.json --config .local/customer/runtime.json --output .local/customer/check-render`. It makes no AWS call and ends with the exact message. Examples: "Invalid deployment field: NAME", "UI, CI and deployment identities must be distinct", "Model ARN must be included in model_arns", "Invalid durable URL, distinct fallback recipient or retention", "Invalid runtime limit: NAME" |
+| "Deployment failed (ValueError); no success claimed. Inspect private evidence." | A setting in `deployment.json` or `runtime.json` breaks a rule in 3.3, and the automation tool does not say which. Run `python -m infra.deploy.durable --spec .local/customer/deployment.json --config .local/customer/runtime.json --output .local/customer/check-render`. It makes no AWS call and ends with the exact message. Examples: "Invalid deployment field: NAME", "UI, CI and deployment identities must be distinct", "Model ARN must be included in model_arns", "Invalid durable URL, distinct fallback recipient or retention", "Invalid runtime limit: NAME" |
 | "Automation configuration has unknown or missing fields", "Invalid AWS profile name", "Supply spec, runtime configuration and verified wheelhouse paths" | `automation.json` must have exactly the five keys in 3.3, with valid values |
 | "Initial deployment must keep investigation_paused true; activation is a separate qualified release" | Set `investigation_paused` to `true` in `runtime.json` |
 | "Team sign-in changed: remove the identity, security and initial_access settings. Team access is now a team.toml allowlist on the UI host; see docs/DEPLOY.md section 7." | An older `runtime.json` still has an `identity` or `security` block, or an older `automation.json` still has `initial_access`. Delete those keys. Team access is now the `team.toml` file on the UI host (section 7), and the deployment tool no longer deals with it. Stacks and resources that an earlier release created for that sign-in stay in your account, because the tool never deletes foreign resources: remove them yourself (the dedicated chat function, the AgentCore chat runtime and endpoint, the session table, the signing secret, the audit bucket and trail, and the issuer role). Do not reuse an old `ui-connection.json`; the UI refuses to start with one |
@@ -919,13 +919,13 @@ python scripts/build_pipeline.py --output .local/customer/build/pipeline --wheel
 python scripts/build_lambdas.py --function incident_investigate --architecture arm64 --output .local/customer/build/host --wheelhouse .build/wheels
 # observers only:
 python scripts/build_observations.py --spec .local/customer/deployment.json --output .local/customer/build/observation --wheelhouse .build/wheels
-python -m infra.durable --spec .local/customer/deployment.json --config .local/customer/runtime.json --output .local/customer/bundle --build-dir .local/customer/build/pipeline --tool-build-dir .local/customer/build/tools
+python -m infra.deploy.durable --spec .local/customer/deployment.json --config .local/customer/runtime.json --output .local/customer/bundle --build-dir .local/customer/build/pipeline --tool-build-dir .local/customer/build/tools
 ```
 
 Add `--host-build-dir`, `--observation-build-dir` and `--bindings .local/customer/bindings.json`
 as they apply. The render prints `review_hash`. **Every re-render changes it.** Commit source
 first: mutating commands refuse a dirty tree or a different commit. To use one named profile for
-every command, run it as `python -m infra.operator --profile NAME --module infra.durable_ops -- ...`.
+every command, run it as `python -m infra.deploy.operator --profile NAME --module infra.deploy.durable_ops -- ...`.
 
 **The stage cycle.** Each stack needs these three commands, then a wait. `STAGE` is a stage name
 from the table below. Take `CHANGE_SET_ID` from the `Id` in `change-set.json` (or use the name
@@ -934,9 +934,9 @@ from the table below. Take `CHANGE_SET_ID` from the `Id` in `change-set.json` (o
 reports `CREATE_COMPLETE` or `UPDATE_COMPLETE` before you collect or seal.
 
 ```bash
-python -m infra.durable_ops change-set --bundle .local/customer/bundle --review-hash REVIEW_HASH --stage STAGE --output .local/customer/change-set.json
-python -m infra.durable_ops inspect --bundle .local/customer/bundle --review-hash REVIEW_HASH --stage STAGE --change-set CHANGE_SET_ID --output .local/customer/inspected-change.json
-python -m infra.durable_ops execute --bundle .local/customer/bundle --review-hash REVIEW_HASH --stage STAGE --change-set CHANGE_SET_ID --change-set-hash INSPECTED_HASH --output .local/customer/execution.json
+python -m infra.deploy.durable_ops change-set --bundle .local/customer/bundle --review-hash REVIEW_HASH --stage STAGE --output .local/customer/change-set.json
+python -m infra.deploy.durable_ops inspect --bundle .local/customer/bundle --review-hash REVIEW_HASH --stage STAGE --change-set CHANGE_SET_ID --output .local/customer/inspected-change.json
+python -m infra.deploy.durable_ops execute --bundle .local/customer/bundle --review-hash REVIEW_HASH --stage STAGE --change-set CHANGE_SET_ID --change-set-hash INSPECTED_HASH --output .local/customer/execution.json
 ```
 
 Then `collect --stage STAGE --output FILE` reads the stack outputs, and `seal-runtime --stage STAGE`

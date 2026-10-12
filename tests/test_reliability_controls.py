@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from infra import durable_ops, observations, owned_ops, release, verify
+from infra.deploy import durable_ops, observations, owned_ops, release, verify
 from infra.spec import ROOT, alarm_descriptors, load
 from scripts.dev.validate_durable import examples
 from scripts.dev.validate_observations import fixtures

@@ -224,7 +224,7 @@ def routing_health(
     *,
     rule_targets=None,
 ):
-    from infra.templates import service_routing
+    from infra.stacks.templates import service_routing
 
     expected = service_routing(spec)["Resources"]
     events = clients("events", spec["monitor_region"])

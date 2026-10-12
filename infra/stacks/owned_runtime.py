@@ -5,6 +5,7 @@ import json
 import re
 from dataclasses import asdict
 
+from infra.deploy.verify import VerificationError
 from infra.spec import (
     ROOT,
     TOOL_LOGICAL,
@@ -16,8 +17,7 @@ from infra.spec import (
     targets,
     tool_functions,
 )
-from infra.templates import att, resource, role, statement, tagged, template
-from infra.verify import VerificationError
+from infra.stacks.templates import att, resource, role, statement, tagged, template
 from tracaus.agentcore import validate_target
 from tracaus.runtime import Limits
 

@@ -8,19 +8,54 @@ privately ([SECURITY.md](SECURITY.md)), never in public issues.
 
 | Path | What it holds |
 | --- | --- |
+| `bin/tracaus` | Launcher for the guided commands (`setup`, `deploy`, `status`, `ui`) |
 | `app.py`, `.streamlit/`, `.env.example` | Streamlit web UI and its settings |
-| `assets/` | Tracaus logos: square mark (favicon, collapsed sidebar), white wordmark for the dark UI, black wordmark for light pages |
-| `tracaus/` | Shared Python runtime: orchestration, tools transport, redaction, team mode, model providers |
-| `lambda/` | Lambda handlers: read-only tools, incident handlers, observers |
+| `assets/` | Logos: square mark (favicon), animated and PNG wordmarks for light and dark pages |
+| `tracaus/` | The product runtime: alert pipeline, investigation, chat, safety. Runs in AWS and in the UI |
+| `lambda/` | Lambda handlers: read-only tools, pipeline handlers, observers. Each calls code in `tracaus/` |
 | `tracaus_agentcore.py` | AgentCore entry point (Bedrock only) |
 | `schemas/`, `config/`, `agent-instruction.txt` | Tool contracts, default metric catalog and the model prompt. They ship inside the Lambda packages at these paths |
-| `infra/` | Template generators, deployment automation and operator commands (`python -m infra.automation`) |
-| `examples/` | Synthetic starting configs that `init` copies; cloud commands reject them until you replace them |
+| `infra/` | Deployment tooling that runs on your computer. See the groups below |
+| `examples/` | Synthetic starting configs that `setup`/`init` copy; cloud commands reject them until you replace them |
 | `scripts/` | Operator tools: run the UI, build packages, replay, collector heartbeat |
 | `scripts/dev/` | Maintainer checks used by CI: validators, build and render verification, secret and publication checks, diagnostics evaluation |
 | `tests/`, `evaluations/` | Offline tests and synthetic diagnostic cases |
 | `requirements/` | Hash-locked dependencies for the UI, development and Lambda packages |
 | `docs/` | Guides: prerequisites, deploy, servers, operate, acceptance, architecture |
+
+## Where each file fits
+
+**`tracaus/` (runs in AWS and in the UI)**
+
+- *When an alarm fires:* `incident.py` (is the alert real, which target), `pipeline.py` (the handlers: accept, first
+  email, investigate, report), `ledger.py` (the DynamoDB record that stops alerts being lost or handled twice),
+  `execution.py` (runs one investigation), `status.py` (incident lookup for the UI), `governance.py` (erase incident
+  data), `telemetry.py` (structured logs).
+- *Investigation:* `runtime.py` (the model loop with limits), `diagnosis.py` (evidence into a report that separates
+  facts from guesses), `metrics.py`, `nginx.py`, `model_api.py` (a non-Bedrock model), `agentcore.py` and
+  `agentcore_host.py` (AgentCore hosting), `cursor.py`, `tool_deadline.py`, `transport.py` (size and time limits).
+- *UI and chat:* `chat.py`, `config.py`, `team.py` (team-mode allowlist), `local_tools.py` (development chat),
+  `work_policy.py`.
+- *Safety and utility:* `safety.py` (redaction), `time.py`.
+- *Optional observers:* `observability.py`, `observation_config.py`, `probes.py`.
+
+**`infra/` (runs on your computer only)**
+
+- `spec.py` and `deployment.schema.json`: read and validate `deployment.json`. Everything else builds on it.
+- `guided/`: the three-command path. `setup.py`, `deploy.py` (also `status` and `ui`), `discover.py` (read-only
+  discovery), `files.py` (settings files and the readiness report), `roles.py` (IAM roles and AWS profiles),
+  `prompt.py`, `console.py`, `common.py`, `__main__.py`.
+- `stacks/`: `templates.py`, `durable_templates.py`, `observation_templates.py`, `owned_runtime.py` write the
+  CloudFormation; `bootstrap_iam.py` writes the IAM roles template.
+- `deploy/`: `automation.py` is the engine behind init, dry-run, check, apply and status. `durable.py`,
+  `durable_ops.py`, `owned_ops.py`, `observations.py` render and run the stages. `release.py` seals a release.
+  `verify.py` and `deployment_preflight.py` are the read-only checks. `operator.py`, `aws.py` and `ecs_discover.py`
+  are helpers.
+- `maintain/`: `reconcile.py` (retire old resources) and `security_ops.py` (recipients and erasure).
+
+**`scripts/`**: `build_lambdas.py`, `build_pipeline.py`, `build_observations.py` make the Lambda ZIPs;
+`collector_heartbeat.py` runs on your servers; `run_customer_ui.py`, `make_local_tools.py`, `replay_incident.py` and
+`replay_notification.py` are operator helpers. `scripts/dev/` is for CI and maintainers.
 
 ## Set up and run the checks
 

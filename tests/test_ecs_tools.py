@@ -274,9 +274,9 @@ def packaged_tools(tmp_path, spec, ecs=None, functions=None, no_schema=False):
 
 
 def test_the_release_check_binds_the_packaged_ecs_targets_to_the_inventory(tmp_path):
-    from infra import release
+    from infra.deploy import release
+    from infra.deploy.verify import VerificationError
     from infra.spec import ROOT, ecs_targets, load
-    from infra.verify import VerificationError
 
     raw = json.loads((ROOT / "examples/ecs.example.json").read_text())
     raw["reference_only"] = False
@@ -314,9 +314,9 @@ def test_the_release_check_binds_the_packaged_ecs_targets_to_the_inventory(tmp_p
 
 
 def test_every_package_must_carry_the_ecs_tool_contract(tmp_path):
-    from infra import release
+    from infra.deploy import release
+    from infra.deploy.verify import VerificationError
     from infra.spec import ROOT, load
-    from infra.verify import VerificationError
 
     plain = load(ROOT / "examples/deployment.example.json")
     packaged_tools(tmp_path, plain, no_schema=True)

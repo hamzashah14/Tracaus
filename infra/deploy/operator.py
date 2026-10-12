@@ -8,7 +8,7 @@ import boto3
 
 MODULES = (
     "infra",
-    "infra.durable_ops",
+    "infra.deploy.durable_ops",
     "scripts.build_pipeline",
     "scripts.build_lambdas",
     "scripts.build_observations",

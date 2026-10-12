@@ -5,9 +5,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from infra import durable, reconcile
+from infra.deploy import durable
+from infra.deploy.verify import VerificationError
+from infra.maintain import reconcile
 from infra.spec import digest, fallback_recipients, load, recipients
-from infra.verify import VerificationError
 from scripts.dev import validate_durable, validate_observations
 from tests.helpers import ROOT
 from tracaus import observability
@@ -228,8 +229,8 @@ def test_the_fingerprint_binds_the_whole_list():
 
 
 def test_routing_verification_needs_every_recipient_registered(tmp_path):
+    from infra.deploy.verify import PendingConfirmation, routing_health
     from infra.spec import topic_arn
-    from infra.verify import PendingConfirmation, routing_health
     from tests.test_deployment_automation import confirmed_subscriptions, routing_clients
 
     spec = listed(tmp_path, A, B)

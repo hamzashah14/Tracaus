@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from infra.observations import build_release  # noqa: E402
+from infra.deploy.observations import build_release  # noqa: E402
 from infra.spec import ecs_targets, load  # noqa: E402
 from scripts.build_lambdas import FUNCTIONS, PIPELINE_FUNCTIONS, build  # noqa: E402
 

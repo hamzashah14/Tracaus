@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from infra import automation
-from infra.verify import VerificationError
+from infra.deploy import automation
+from infra.deploy.verify import VerificationError
 from tests.test_deployment_automation import run_main
 
 

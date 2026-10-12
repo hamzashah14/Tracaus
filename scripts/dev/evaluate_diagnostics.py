@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from infra.security_ops import private_write  # noqa: E402
+from infra.maintain.security_ops import private_write  # noqa: E402
 from tracaus import diagnosis, model_api, runtime, safety, work_policy  # noqa: E402
 
 

@@ -9,10 +9,11 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from infra import durable_ops, owned_runtime
-from infra.aws import clients
+from infra.deploy import durable_ops
+from infra.deploy.aws import clients
+from infra.deploy.verify import VerificationError, assert_account
 from infra.spec import digest, fallback_recipients, recipients, topic_arn
-from infra.verify import VerificationError, assert_account
+from infra.stacks import owned_runtime
 from tracaus.governance import Erasure
 from tracaus.ledger import DATABASE_CONFIG
 

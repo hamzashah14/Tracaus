@@ -5,7 +5,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 
-from infra import templates
+from infra.deploy.verify import VerificationError
 from infra.spec import (
     ROOT,
     canary_tools,
@@ -16,7 +16,7 @@ from infra.spec import (
     metric_catalog,
     tool_functions,
 )
-from infra.verify import VerificationError
+from infra.stacks import templates
 
 SEALED_POLICY = {"Statement": [{"Effect": "Deny", "Action": "Update:*", "Principal": "*", "Resource": "*"}]}
 

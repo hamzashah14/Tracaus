@@ -391,8 +391,8 @@ def test_status_lookup_rejects_untrusted_id_before_client():
 
 
 def test_durable_templates_keep_capture_ahead_of_cutover_and_scope_roles():
-    from infra import durable_templates
     from infra.spec import ROOT, load
+    from infra.stacks import durable_templates
 
     spec = load(ROOT / "examples/deployment.example.json")
     config = json.loads((ROOT / "examples/durable.example.json").read_text())
@@ -437,8 +437,8 @@ def test_durable_templates_keep_capture_ahead_of_cutover_and_scope_roles():
 
 
 def test_synthetic_durable_cloud_bundle_rejected_before_credentials(tmp_path, monkeypatch):
-    from infra import durable_ops
-    from infra.durable import render
+    from infra.deploy import durable_ops
+    from infra.deploy.durable import render
     from infra.spec import ROOT
 
     bundle = render(
@@ -740,7 +740,7 @@ def test_ambiguous_publication_retries_stable_id_without_model_work(monkeypatch)
 
 
 def test_cloud_mutation_refuses_changed_source_before_aws():
-    from infra import durable_ops
+    from infra.deploy import durable_ops
 
     with (
         patch.object(durable_ops.subprocess, "check_output", side_effect=["different\n", ""]),

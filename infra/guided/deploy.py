@@ -19,7 +19,7 @@ from pathlib import Path
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from infra.automation import factory, private_json
+from infra.deploy.automation import factory, private_json
 from infra.guided import roles as guided_roles
 from infra.guided.common import ROUTING_STAGE, STAGES, GuidedError, aws_env, parse_json_object, run
 from infra.guided.console import clean
@@ -100,7 +100,7 @@ class Deploy:
         return [
             sys.executable,
             "-m",
-            "infra.automation",
+            "infra.deploy.automation",
             name,
             "--config",
             str(self.config),
@@ -172,7 +172,7 @@ class Deploy:
                         "The settings or the source changed after this deployment started",
                         "the journal belongs to a different plan",
                         "Nothing was deleted; the earlier journal is kept.",
-                        "Start the next release: python -m infra.automation refresh --from-dir "
+                        "Start the next release: python -m infra.deploy.automation refresh --from-dir "
                         f"{shlex.quote(str(self.work_dir))} --work-dir {shlex.quote(str(self.work_dir) + '-r2')}",
                     )
                 done = sum(1 for s in state.get("stages", {}).values() if s.get("status") == "COMPLETE")
@@ -394,7 +394,7 @@ class Deploy:
         cause = " | ".join(part for part in [error, *reasons, *tail[-4:]] if part) or "no detail was recorded"
         if "Configuration/source changed" in error or "Source revision changed" in error:
             next_step = (
-                f"python -m infra.automation refresh --from-dir {shlex.quote(str(self.work_dir))} "
+                f"python -m infra.deploy.automation refresh --from-dir {shlex.quote(str(self.work_dir))} "
                 f"--work-dir {shlex.quote(str(self.work_dir) + '-r2')}, "
                 "then run setup against the new folder."
             )

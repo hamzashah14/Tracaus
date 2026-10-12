@@ -10,8 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from infra import durable, durable_ops, templates  # noqa: E402
+from infra.deploy import durable, durable_ops  # noqa: E402
 from infra.spec import load, name, prefix  # noqa: E402
+from infra.stacks import templates  # noqa: E402
 from scripts.dev.validate_durable import examples  # noqa: E402
 
 
@@ -60,7 +61,7 @@ def main():
                 "RuntimeVersion": "1",
             }
         if args.observations:
-            from infra.observation_templates import FUNCTIONS
+            from infra.stacks.observation_templates import FUNCTIONS
 
             observation = ROOT / ".build/observation-a"
             bindings["observation_artifacts"] = {n: pin(observation, "monitor", n) for n in FUNCTIONS}

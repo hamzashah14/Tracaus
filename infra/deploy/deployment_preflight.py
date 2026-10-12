@@ -4,9 +4,9 @@ import json
 
 from botocore.exceptions import ClientError
 
+from infra.deploy.verify import VerificationError
 from infra.spec import ecs_services, prefix
-from infra.templates import bucket_name
-from infra.verify import VerificationError
+from infra.stacks.templates import bucket_name
 
 # Creation APIs frequently require '*'; these checks deliberately expose that
 # requirement instead of supplying AdministratorAccess or changing customer IAM.
@@ -307,7 +307,7 @@ def check(plan, factory, *, remaining_reserved=None):
         }
         if active != expected:
             raise VerificationError("Create/configure the declared EC2 inventory before deployment")
-    from infra.verify import assert_concurrency, assert_ecs_inventory
+    from infra.deploy.verify import assert_concurrency, assert_ecs_inventory
 
     assert_ecs_inventory(spec, factory)
 

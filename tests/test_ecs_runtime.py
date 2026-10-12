@@ -8,9 +8,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from infra import owned_runtime, templates
+from infra.deploy.verify import VerificationError
 from infra.spec import ROOT, load
-from infra.verify import VerificationError
+from infra.stacks import owned_runtime, templates
 from scripts.dev import validate_durable
 from tracaus import execution, runtime
 from tracaus.agentcore import validate_result
@@ -423,7 +423,7 @@ def test_the_ecs_tool_function_is_read_only_and_scoped(ecs_spec):
 
 
 def canary_run(spec, tools, evidence, monkeypatch):
-    from infra import owned_ops
+    from infra.deploy import owned_ops
 
     monkeypatch.setattr(owned_ops, "verify_candidate", MagicMock())
     monkeypatch.setattr(owned_ops, "coverage", MagicMock())
@@ -457,7 +457,7 @@ def test_the_canary_of_an_ecs_only_deployment_proves_service_state_and_metrics(e
         ecs_spec, ["fetch_ecs", "fetch_metrics"], ["fetch_ecs", "fetch_metrics"], monkeypatch
     )
     assert receipt["status"] == "PASS" and "ECS service ecs-orders" in prompt and "fetch_ecs" in prompt
-    from infra import release
+    from infra.deploy import release
 
     release.require_receipt(bundle, receipt)  # the promotion gate accepts it for this deployment
 
@@ -474,7 +474,7 @@ def test_extra_tools_in_the_canary_are_fine_missing_ones_are_not(ecs_spec, monke
 def test_a_receipt_without_the_ecs_tool_is_refused_for_an_ecs_deployment(ecs_spec):
     from datetime import datetime, timezone
 
-    from infra import release
+    from infra.deploy import release
 
     bundle = {"review_hash": "r", "spec": ecs_spec}
     record = {

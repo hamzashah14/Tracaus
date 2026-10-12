@@ -4,9 +4,10 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from infra import owned_runtime, release
+from infra.deploy import release
+from infra.deploy.verify import VerificationError, coverage, verify_function
 from infra.spec import TOOL_LOGICAL, canary_target, canary_tools, tool_functions
-from infra.verify import VerificationError, coverage, verify_function
+from infra.stacks import owned_runtime
 from tracaus.runtime import sdk_client
 
 
@@ -45,7 +46,7 @@ def sealed(bundle, stage, factory):
     body = client.get_template(StackName=info["stack"])["TemplateBody"]
     if isinstance(body, str):
         body = json.loads(body)
-    from infra.templates import template_hash
+    from infra.stacks.templates import template_hash
 
     if template_hash(body) != info["template_hash"]:
         raise VerificationError("Sealed candidate template drifted")
@@ -69,7 +70,7 @@ def verify_agentcore_logs(spec, remote, factory):
 
 def verify_candidate(bundle, factory):
     spec, bindings, config = bundle["spec"], bundle["bindings"], bundle["config"]
-    from infra.verify import assert_account
+    from infra.deploy.verify import assert_account
 
     assert_account(factory("sts", spec["monitor_region"]), spec)
     owned_runtime.validate_bindings(spec, config, bindings)
@@ -94,7 +95,7 @@ def verify_candidate(bundle, factory):
         verify_remote(bundle, factory)
 
     # Verify the six queue consumers, especially the actual caller's IAM role.
-    from infra.durable_ops import verify_runtime
+    from infra.deploy.durable_ops import verify_runtime
 
     verify_runtime(bundle, factory=factory)
     return {

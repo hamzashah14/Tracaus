@@ -8,10 +8,11 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-from infra import durable_templates, observation_templates, owned_runtime, release, templates
+from infra.deploy import release
+from infra.deploy.verify import VerificationError
 from infra.spec import ROOT, digest, load, prefix, tool_functions
 from infra.spec import name as resource_name
-from infra.verify import VerificationError
+from infra.stacks import durable_templates, observation_templates, owned_runtime, templates
 from scripts.build_lambdas import PIPELINE_FUNCTIONS
 
 TEAM_SIGNIN_CHANGED = (
@@ -128,7 +129,7 @@ def render(
         if host_build_dir
         else None
     )
-    from infra.observations import checked_build as checked_observers
+    from infra.deploy.observations import checked_build as checked_observers
 
     observation_build = checked_observers(observation_build_dir, spec) if observation_build_dir else None
     stages = {
@@ -180,7 +181,7 @@ def render(
                 spec, foundation, bindings["observation_artifacts"], config
             )
         if "observation_versions" in bindings:
-            from infra.observations import validate_versions
+            from infra.deploy.observations import validate_versions
 
             validate_versions(spec, bindings["observation_versions"])
             if (

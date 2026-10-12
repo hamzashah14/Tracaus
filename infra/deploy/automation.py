@@ -18,9 +18,10 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from infra import deployment_preflight, durable, templates
+from infra.deploy import deployment_preflight, durable
+from infra.deploy.verify import PendingConfirmation, VerificationError
 from infra.spec import ROOT, cwagent, digest, load, name, prefix
-from infra.verify import PendingConfirmation, VerificationError
+from infra.stacks import templates
 
 
 class Waiting(RuntimeError):
@@ -204,7 +205,8 @@ def plan(path):
             "Production promotion/activation after customer acceptance",
         ],
     }
-    from infra import durable_ops, durable_templates
+    from infra.deploy import durable_ops
+    from infra.stacks import durable_templates
 
     previews = {
         "foundation-tools": templates.foundation(spec, "tools"),
@@ -294,7 +296,7 @@ class Driver:
         command = [
             sys.executable,
             "-m",
-            "infra.operator",
+            "infra.deploy.operator",
             "--profile",
             self.plan["profile"] or "",
             "--module",
@@ -310,7 +312,11 @@ class Driver:
             result = subprocess.run(
                 command, cwd=ROOT, env=self.env, stdout=log, stderr=log, timeout=600, umask=0o077
             )
-        if result.returncode == PendingConfirmation.EXIT_CODE and module == "infra.durable_ops" and output:
+        if (
+            result.returncode == PendingConfirmation.EXIT_CODE
+            and module == "infra.deploy.durable_ops"
+            and output
+        ):
             raise confirmation_wait(json.loads(output.read_text())["recipients"])
         if result.returncode:
             raise VerificationError(
@@ -325,7 +331,7 @@ class Driver:
                 arguments += ["--" + key.replace("_", "-")]
                 if value != "":
                     arguments.append(value)
-        return self.command("infra.durable_ops", arguments, self.directory / "operation.json")
+        return self.command("infra.deploy.durable_ops", arguments, self.directory / "operation.json")
 
     def render(self, bindings):
         private_json(self.directory / "bindings.json", bindings)
@@ -680,7 +686,7 @@ def deploy(planned, directory, driver, *, allow_model=False, retry_canary=False)
         # Paid work is not blindly repeated on an ambiguous failure.
         receipt = state.get("canary")
         if receipt:
-            from infra.release import require_receipt
+            from infra.deploy.release import require_receipt
 
             try:
                 require_receipt(bundle, receipt)

@@ -1,7 +1,7 @@
 """Retire only CloudFormation-owned resources, with a reviewed immutable diff."""
 
+from infra.deploy.verify import VerificationError, assert_account
 from infra.spec import digest, name, recipients, topic_arn
-from infra.verify import VerificationError, assert_account
 
 
 def desired_names(spec):

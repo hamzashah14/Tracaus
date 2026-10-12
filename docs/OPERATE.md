@@ -82,7 +82,7 @@ before it is published.
    command needs clean reviewed source:
 
    ```bash
-   python -m infra.durable_ops attest-email --bundle .local/customer/bundle --review-hash REVIEW_HASH --notification-id RECEIVED_NOTIFICATION_ID --confirm-inbox-delivery --output .local/customer/private/attest.json
+   python -m infra.deploy.durable_ops attest-email --bundle .local/customer/bundle --review-hash REVIEW_HASH --notification-id RECEIVED_NOTIFICATION_ID --confirm-inbox-delivery --output .local/customer/private/attest.json
    ```
 
    Never attest from an SNS publish log or an SQS receipt. The primary attestation does not cover the fallback
@@ -201,8 +201,8 @@ and observer runtime ([DEPLOY.md](DEPLOY.md#appendix-a-manual-commands)).
    topic, subscription and old address independently, then apply:
 
    ```bash
-   python -m infra.security_ops recipients-plan --bundle .local/customer/bundle --review-hash REVIEW_HASH --output .local/customer/private/recipient-plan.json
-   python -m infra.security_ops recipients-apply --bundle .local/customer/bundle --review-hash REVIEW_HASH --plan .local/customer/private/recipient-plan.json --output .local/customer/private/recipient-result.json
+   python -m infra.maintain.security_ops recipients-plan --bundle .local/customer/bundle --review-hash REVIEW_HASH --output .local/customer/private/recipient-plan.json
+   python -m infra.maintain.security_ops recipients-apply --bundle .local/customer/bundle --review-hash REVIEW_HASH --plan .local/customer/private/recipient-plan.json --output .local/customer/private/recipient-result.json
    ```
 
    Apply needs clean reviewed source. It rechecks the diff, unsubscribes only reviewed email subscriptions and requires
@@ -276,7 +276,7 @@ and you create and fill it yourself. Tracaus's automation only reads its metadat
    version holds `AWSCURRENT`, and it never reads the key:
 
    ```bash
-   python -m infra.durable_ops model-secret-version --bundle .local/customer/bundle --review-hash REVIEW_HASH --output .local/customer/model-secret.json
+   python -m infra.deploy.durable_ops model-secret-version --bundle .local/customer/bundle --review-hash REVIEW_HASH --output .local/customer/model-secret.json
    ```
 
 3. Re-render, then build, create and seal the new release stacks and run `verify-candidate`. Then run the paid staging
@@ -318,8 +318,8 @@ pending delivery first. Never erase running or retryable work. Wait at least 15 
 lease.
 
 ```bash
-python -m infra.security_ops erase-plan --bundle .local/customer/bundle --review-hash REVIEW_HASH --incident INCIDENT_ID --output .local/customer/private/erasure-plan.json
-python -m infra.security_ops erase-apply --bundle .local/customer/bundle --review-hash REVIEW_HASH --plan .local/customer/private/erasure-plan.json --output .local/customer/private/erasure-result.json
+python -m infra.maintain.security_ops erase-plan --bundle .local/customer/bundle --review-hash REVIEW_HASH --incident INCIDENT_ID --output .local/customer/private/erasure-plan.json
+python -m infra.maintain.security_ops erase-apply --bundle .local/customer/bundle --review-hash REVIEW_HASH --plan .local/customer/private/erasure-plan.json --output .local/customer/private/erasure-result.json
 ```
 
 Review the incident, row digests, account, bucket, and every object version and delete marker. Apply needs clean

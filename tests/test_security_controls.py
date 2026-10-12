@@ -10,8 +10,9 @@ from unittest.mock import Mock
 import pytest
 from botocore.exceptions import ClientError
 
-from infra import owned_runtime, security_ops
-from infra.verify import VerificationError
+from infra.deploy.verify import VerificationError
+from infra.maintain import security_ops
+from infra.stacks import owned_runtime
 from scripts.dev import evaluate_diagnostics
 from tests.test_owned_runtime import BASE, SPEC, bindings
 from tests.test_runtime import answer, drive
@@ -540,7 +541,7 @@ def canary_client(bundle):
 
 
 def test_canary_needs_no_ticket_and_uses_the_staging_runtime_canary(monkeypatch):
-    from infra import owned_ops
+    from infra.deploy import owned_ops
 
     monkeypatch.setattr(owned_ops, "verify_candidate", Mock())
     monkeypatch.setattr(owned_ops, "coverage", Mock())
@@ -558,7 +559,7 @@ def test_canary_needs_no_ticket_and_uses_the_staging_runtime_canary(monkeypatch)
 
 
 def test_canary_still_requires_paid_authorization_in_staging():
-    from infra import owned_ops
+    from infra.deploy import owned_ops
 
     factory = Mock()
     for spec, allowed in (({"environment": "staging"}, False), ({"environment": "production"}, True)):

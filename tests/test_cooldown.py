@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from botocore.exceptions import ClientError
 
-from infra import durable
+from infra.deploy import durable
 from infra.spec import ROOT, load
 from scripts.dev import validate_durable
 from tracaus import pipeline

@@ -8,8 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from infra import bootstrap_iam, templates  # noqa: E402
 from infra.spec import load, name, tool_functions  # noqa: E402
+from infra.stacks import bootstrap_iam, templates  # noqa: E402
 
 
 def examples(spec):

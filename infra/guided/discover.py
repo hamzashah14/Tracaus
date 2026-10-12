@@ -9,7 +9,7 @@ import re
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from infra.ecs_discover import application_balancers, awslogs
+from infra.deploy.ecs_discover import application_balancers, awslogs
 
 INSTANCE = re.compile(r"i-(?:[a-f0-9]{8}|[a-f0-9]{17})")
 ECS_NAME = re.compile(r"[A-Za-z0-9_-]{1,255}")

@@ -458,8 +458,8 @@ def test_both_targets_use_owned_permissions_and_no_classic_dependency(target):
 
 
 def test_paid_canary_requires_explicit_staging_authorization_before_aws():
-    from infra.owned_ops import canary
-    from infra.verify import VerificationError
+    from infra.deploy.owned_ops import canary
+    from infra.deploy.verify import VerificationError
 
     factory = MagicMock()
     with pytest.raises(VerificationError):
@@ -470,8 +470,8 @@ def test_paid_canary_requires_explicit_staging_authorization_before_aws():
 
 
 def test_role_verification_rejects_extra_attached_policy():
-    from infra.owned_ops import verify_role
-    from infra.verify import VerificationError
+    from infra.deploy.owned_ops import verify_role
+    from infra.deploy.verify import VerificationError
 
     client = MagicMock()
     trust = {"Version": "2012-10-17", "Statement": []}
@@ -648,9 +648,9 @@ def test_agentcore_http_contract_serializes_json_as_chunked_sse():
 
 
 def test_runtime_verification_uses_injected_clients_for_stack_checks(monkeypatch):
-    from infra import durable_ops
+    from infra.deploy import durable_ops
+    from infra.deploy.verify import VerificationError
     from infra.spec import ROOT, load, tags
-    from infra.verify import VerificationError
 
     spec = load(ROOT / "examples/deployment.example.json")
     spec["reference_only"] = False  # Only injected mocks are permitted below.

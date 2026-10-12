@@ -6,9 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from infra import durable, durable_ops, reconcile, release, templates
-from infra.spec import ROOT, alarm_descriptors, load, log_groups, metric_catalog, name, topic_arn
-from infra.verify import (
+from infra.deploy import durable, durable_ops, release
+from infra.deploy.verify import (
     VerificationError,
     assert_account,
     assert_concurrency,
@@ -16,6 +15,9 @@ from infra.verify import (
     coverage,
     exact_metric_exists,
 )
+from infra.maintain import reconcile
+from infra.spec import ROOT, alarm_descriptors, load, log_groups, metric_catalog, name, topic_arn
+from infra.stacks import templates
 from scripts.dev.validate_infrastructure import examples
 
 
@@ -368,7 +370,7 @@ def test_feature_disable_and_instance_removal_have_explicit_retirements(spec):
 def test_changed_retirement_plan_cannot_mutate(spec):
     factory = MagicMock()
     factory.return_value.get_caller_identity.return_value = {"Account": spec["account_id"]}
-    with patch("infra.reconcile.owned_resources", return_value=[]), pytest.raises(VerificationError):
+    with patch("infra.maintain.reconcile.owned_resources", return_value=[]), pytest.raises(VerificationError):
         reconcile.apply(spec, factory, {"review_hash": "stale"}, "worker")
     factory.return_value.unsubscribe.assert_not_called()
     factory.return_value.disable_alarm_actions.assert_not_called()
@@ -517,7 +519,7 @@ def test_maintenance_disables_automatic_ingress(spec):
 
 
 def test_seal_requires_owned_successful_stack_and_reads_protection_back(spec, monkeypatch):
-    from infra.durable_ops import seal_runtime
+    from infra.deploy.durable_ops import seal_runtime
     from infra.spec import tags
 
     client = MagicMock()
@@ -564,7 +566,7 @@ def test_seal_requires_owned_successful_stack_and_reads_protection_back(spec, mo
 
 
 def test_routing_verification_rejects_alarm_and_event_drift(spec):
-    from infra.verify import routing_health
+    from infra.deploy.verify import routing_health
 
     clients = {key: MagicMock() for key in ("events", "sns", "cloudwatch")}
     rendered = examples(spec)["routing"]["Resources"]

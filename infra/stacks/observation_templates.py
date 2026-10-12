@@ -2,7 +2,6 @@
 
 import json
 
-from infra import durable_templates, owned_runtime
 from infra.spec import (
     alarm_descriptors,
     digest,
@@ -13,7 +12,8 @@ from infra.spec import (
     recipients,
     topic_arn,
 )
-from infra.templates import add_function, att, ref, resource, statement, tagged, template
+from infra.stacks import durable_templates, owned_runtime
+from infra.stacks.templates import add_function, att, ref, resource, statement, tagged, template
 
 FUNCTIONS = {
     "observation_probe": "Observer",

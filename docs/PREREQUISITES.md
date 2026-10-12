@@ -5,7 +5,7 @@
 > account.
 
 This page answers one question: what must already exist, and what must you have decided, before you
-run `python -m infra.automation`? It lists requirements only. The steps are in the
+run `python -m infra.deploy.automation`? It lists requirements only. The steps are in the
 [deployment guide](DEPLOY.md). Terms are in the [glossary](ARCHITECTURE.md#glossary).
 
 **How to use this page.** Work through the quick checklist, then read the section behind each box you
@@ -315,7 +315,7 @@ appear after a test request. The coverage check inside the canary enforces all o
 
 ### 6.1 The three private JSON files
 
-`python -m infra.automation init --work-dir .local/customer` writes them with synthetic examples
+`python -m infra.deploy.automation init --work-dir .local/customer` writes them with synthetic examples
 (`reference_only: true`, `.invalid` addresses) that `check` and `apply` reject. Relative paths in
 `automation.json` resolve against that file. Keep real values out of Git. The rules are explained in
 [DEPLOY.md 3.3](DEPLOY.md#33-fill-in-the-three-files).
@@ -520,10 +520,10 @@ credentials. It cannot run incident investigations. It needs:
 Go from the cheapest check to the most expensive. Commit the reviewed source before `dry-run`.
 
 ```bash
-python -m infra.automation init --work-dir .local/customer
+python -m infra.deploy.automation init --work-dir .local/customer
 # Fill in the three files, then:
-python -m infra.automation dry-run --config .local/customer/automation.json --work-dir .local/customer
-python -m infra.automation check --config .local/customer/automation.json --work-dir .local/customer
+python -m infra.deploy.automation dry-run --config .local/customer/automation.json --work-dir .local/customer
+python -m infra.deploy.automation check --config .local/customer/automation.json --work-dir .local/customer
 ```
 
 1. **`dry-run`, offline.** It makes no AWS call. It catches schema and rule errors: roles that are not

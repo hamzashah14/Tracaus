@@ -11,7 +11,7 @@ import re
 import shutil
 from pathlib import Path
 
-from infra.automation import private_json
+from infra.deploy.automation import private_json
 from infra.spec import ROOT
 
 NAMES = ("deployment.json", "runtime.json", "automation.json")
@@ -122,7 +122,7 @@ def _ecs_entry(item):
 
 def validate(directory):
     """Load the three files with the loaders `dry-run` uses. Raises FilesError without the offending value."""
-    from infra.durable import load_config
+    from infra.deploy.durable import load_config
     from infra.spec import load
 
     directory = Path(directory)

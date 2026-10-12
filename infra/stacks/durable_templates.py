@@ -13,7 +13,7 @@ from infra.spec import (
     targets,
     topic_arn,
 )
-from infra.templates import (
+from infra.stacks.templates import (
     add_function,
     att,
     ref,
@@ -536,7 +536,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
         ),
     }
     if owned_bindings is not None:
-        from infra.owned_runtime import caller_environment, caller_permissions
+        from infra.stacks.owned_runtime import caller_environment, caller_permissions
 
         logical, previous_env, permissions, timeout = definitions["incident_investigate"]
         model_env = {key: value for key, value in previous_env.items() if not key.startswith("BEDROCK_")}
@@ -583,7 +583,7 @@ def active_routing(
     r["UiRole"] = role(spec, spec["ui_principal_arn"], [], service=False)
     t["Outputs"]["UiRoleArn"] = {"Value": att("UiRole")}
     if owned_bindings is not None:
-        from infra.owned_runtime import caller_environment, caller_permissions
+        from infra.stacks.owned_runtime import caller_environment, caller_permissions
 
         r["UiRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"] = caller_permissions(
             spec, config, owned_bindings

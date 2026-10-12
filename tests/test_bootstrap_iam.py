@@ -7,8 +7,9 @@ import sys
 
 import pytest
 
-from infra import bootstrap_iam, deployment_preflight
+from infra.deploy import deployment_preflight
 from infra.spec import load
+from infra.stacks import bootstrap_iam
 from tests.helpers import ROOT
 
 SPEC = load(ROOT / "examples/deployment.example.json")
