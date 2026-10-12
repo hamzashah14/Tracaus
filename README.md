@@ -1,60 +1,50 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/tracaus-logo-white.png">
-  <img alt="Tracaus" src="assets/tracaus-logo-black.png" width="240">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/tracaus-logo-animated-white.svg">
+    <img alt="Tracaus" src="assets/tracaus-logo-animated-black.svg" width="480">
+  </picture>
+</p>
 
-# Tracaus: an AIOps assistant for your EC2 and ECS workloads
+<p align="center">
+  <strong>Trace the cause.</strong><br />
+  An AI incident investigator for your AWS EC2 and ECS workloads<br />
+  Read-only. Runs in your account. No hosted service. Just <code>streamlit run app.py</code> to try it.
+</p>
 
-When a CloudWatch alarm fires, Tracaus reads the logs and metrics of the affected
-server or service, asks an AI model (Amazon Bedrock by default) to reason over that evidence,
-and writes a short report that separates what was observed from what is only a
-guess. You get the alert first and a link to the report when it is ready. You can
-also ask questions in a web chat. You run all of it in your own AWS account.
+<p align="center">
+  <a href="https://github.com/hamzashah14/Tracaus/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/hamzashah14/Tracaus/ci.yml?branch=main&label=build" alt="Build Status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.12-blue" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/status-pre--release-orange" alt="Status: pre-release">
+  <a href="https://github.com/hamzashah14/Tracaus/stargazers"><img src="https://img.shields.io/github/stars/hamzashah14/Tracaus?style=flat" alt="GitHub Stars"></a>
+</p>
 
-- **Read-only.** Its tools only read CloudWatch logs and metrics for the EC2 instances and ECS services you list, and, for an ECS service, its state (deployments, stopped tasks, load balancer health).
-- **EC2 and ECS.** List EC2 instances, ECS services (Fargate or EC2 launch type), or both. For ECS, Tracaus reads where ECS sends things by default: `awslogs` log groups, `AWS/ECS` and load balancer metrics, and EventBridge task events. See [SERVERS.md](docs/SERVERS.md#ecs-services).
-- **No automatic fixes.** Tracaus suggests; a person decides and acts.
-- **Your account.** Everything is deployed and operated by you, in your AWS regions.
-- **You pay for what you use.** AWS bills Bedrock, CloudWatch, Lambda and the other services to you. A Model API provider, if you pick one, bills you separately.
-- **No hosted service.** There is no maintainer account, control plane or subscription.
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#what-it-reads">What it reads</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#three-choices">Choices</a> ·
+  <a href="#deploy-to-your-aws-account">Deploy</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="#documentation">Docs</a>
+</p>
+
+---
+
+## What is Tracaus?
+
+Tracaus (trace + cause) is a free, open-source AIOps assistant for AWS.
+
+When a CloudWatch alarm fires, it reads the logs and metrics of the affected EC2
+instance or ECS service, asks an AI model (Amazon Bedrock by default) to reason over that
+evidence, and writes a short report that separates what was observed from what is only a
+guess. You get the alert first and a link to the report when it is ready. You can also ask
+questions in a web chat. You run all of it in your own AWS account.
 
 > **Status:** locally tested, never run against real AWS. Treat your first deployment as staging.
 
-## How it works
-
-```mermaid
-flowchart LR
-    Events[CloudWatch / EventBridge] --> Ingress[SNS / ingress queue]
-    Ingress --> Ledger[DynamoDB ledger / outbox]
-    Ledger --> Alert[Independent initial notification]
-    Ledger --> Worker[Fenced investigation worker]
-    UI[Web UI] --> Runtime[Python orchestration / Bedrock or Model API]
-    Worker --> Runtime
-    Runtime --> Tools[Pinned read-only tools / CloudWatch]
-    Worker --> Evidence[Private versioned reports]
-    Evidence --> Followup[Follow-up notification]
-```
-
-The first alert is sent without waiting for the model. Each investigation is
-limited in tokens, tool calls, query windows and time. Missing logs alone are not
-treated as proof of a hang. See the [architecture and glossary](docs/ARCHITECTURE.md).
-
-## Three choices
-
-You make each choice when you deploy. The defaults need the least setup.
-
-| Choice | Default | Option |
-| --- | --- | --- |
-| Who signs in | **Local single-user mode.** One shared password protects the web UI. | **Team mode.** Several people share one UI. Each signs in through your identity provider with MFA and sees only the instances on their entry in a `team.toml` file on the UI host. No AWS resources. |
-| Which model | **Amazon Bedrock.** | **Model API.** An OpenAI-compatible or Anthropic Messages endpoint. Its key lives in AWS Secrets Manager. |
-| Where it runs | **Standalone AWS Lambda.** | **Amazon Bedrock AgentCore.** Bedrock only, so it cannot be combined with a Model API or team mode. |
-
-Pass `--team-file` to the UI launcher for team mode. Set `model_provider` in
-`deployment.json` for a Model API. The [deployment guide](docs/DEPLOY.md) covers both.
-The Model API option has never run against a live provider, and diagnosis quality
-on non-Claude models is unmeasured.
-
-## Try the UI locally in about 10 minutes
+## Quick Start
 
 You need Python 3.12. The preview needs no AWS account. Create a virtual environment and
 activate it. Every command in this README then works as written, as long as your prompt
@@ -82,6 +72,9 @@ does not protect.
 
 ### Try it against your own CloudWatch (no deployment)
 
+<details>
+<summary>Steps and limits</summary>
+
 For development, the UI can run its two read-only tools (`fetch_logs`, `fetch_metrics`) in
 its own process with your AWS credentials. You skip the tool Lambdas and `infra.automation`.
 
@@ -105,6 +98,107 @@ layout of the agent file in [SERVERS.md](docs/SERVERS.md), and the groups you li
 group, such as `/aws/lambda/...`, is out of reach. The UI process holds your read credentials, so Tracaus's checks run in code and
 IAM does not back them up. Keep the UI on `127.0.0.1`. Use the deployed tools for anything
 shared or production. This mode has never run against real AWS either, and it covers EC2 instances only.
+
+</details>
+
+## Features
+
+<details open>
+<summary><strong>Evidence first, guesses labelled</strong></summary>
+
+Each report separates what was observed in logs and metrics from what is only a hypothesis.
+Missing logs alone are not treated as proof of a hang.
+
+</details>
+
+<details>
+<summary><strong>EC2 and ECS</strong></summary>
+
+List EC2 instances, ECS services (Fargate or EC2 launch type), or both, up to 10 in total.
+For ECS, Tracaus reads where ECS sends things by default: `awslogs` log groups, `AWS/ECS` and
+load balancer metrics, and EventBridge task events. See [SERVERS.md](docs/SERVERS.md#ecs-services).
+
+</details>
+
+<details>
+<summary><strong>Read-only, no automatic fixes</strong></summary>
+
+Its tools only read CloudWatch logs and metrics for the EC2 instances and ECS services you list,
+and, for an ECS service, its state (deployments, stopped tasks, load balancer health).
+Tracaus suggests; a person decides and acts.
+
+</details>
+
+<details>
+<summary><strong>The alert never waits for the model</strong></summary>
+
+The first alert is sent without waiting for the model. If the model is down, the investigation
+is retried within fixed limits, then recorded as degraded.
+
+</details>
+
+<details>
+<summary><strong>Your account, your bill</strong></summary>
+
+Everything is deployed and operated by you, in your AWS regions. AWS bills Bedrock, CloudWatch,
+Lambda and the other services to you. A Model API provider, if you pick one, bills you separately.
+There is no maintainer account, control plane or subscription.
+
+</details>
+
+<details>
+<summary><strong>Chat with the same tools</strong></summary>
+
+The web UI lets you ask follow-up questions. Chat uses the same pinned read-only tools as the
+automatic investigations, under the runtime limits.
+
+</details>
+
+## What it reads
+
+| | EC2 instance | ECS service (Fargate or EC2 launch type) |
+|---|---|---|
+| Logs | CloudWatch agent log groups, and existing log groups you list | `awslogs` log groups, such as `/ecs/<family>` |
+| Metrics | CloudWatch agent metrics (CPU, memory, disk, optional Nginx and process) | `AWS/ECS` CPU and memory, `AWS/ApplicationELB` if an ALB is in front, Container Insights if you turn it on |
+| Events | Instance stop | Task stopped (EventBridge) |
+| Service state | n/a | Deployments, service events, stopped tasks with stop code and container exit codes, load balancer target health |
+| You set up | CloudWatch agent, heartbeat, Nginx logging | `awslogs` driver, and Container Insights if you want it |
+
+Tracaus never installs anything on your servers or tasks. Server setup stays with you:
+[EC2](docs/SERVERS.md), [ECS](docs/SERVERS.md#ecs-services).
+
+## How it works
+
+```mermaid
+flowchart LR
+    Events[CloudWatch / EventBridge] --> Ingress[SNS / ingress queue]
+    Ingress --> Ledger[DynamoDB ledger / outbox]
+    Ledger --> Alert[Independent initial notification]
+    Ledger --> Worker[Fenced investigation worker]
+    UI[Web UI] --> Runtime[Python orchestration / Bedrock or Model API]
+    Worker --> Runtime
+    Runtime --> Tools[Pinned read-only tools / CloudWatch]
+    Worker --> Evidence[Private versioned reports]
+    Evidence --> Followup[Follow-up notification]
+```
+
+Each investigation is limited in tokens, tool calls, query windows and time. See the
+[architecture and glossary](docs/ARCHITECTURE.md).
+
+## Three choices
+
+You make each choice when you deploy. The defaults need the least setup.
+
+| Choice | Default | Option |
+| --- | --- | --- |
+| Who signs in | **Local single-user mode.** One shared password protects the web UI. | **Team mode.** Several people share one UI. Each signs in through your identity provider with MFA and sees only the instances on their entry in a `team.toml` file on the UI host. No AWS resources. |
+| Which model | **Amazon Bedrock.** | **Model API.** An OpenAI-compatible or Anthropic Messages endpoint. Its key lives in AWS Secrets Manager. |
+| Where it runs | **Standalone AWS Lambda.** | **Amazon Bedrock AgentCore.** Bedrock only, so it cannot be combined with a Model API or team mode. |
+
+Pass `--team-file` to the UI launcher for team mode. Set `model_provider` in
+`deployment.json` for a Model API. The [deployment guide](docs/DEPLOY.md) covers both.
+The Model API option has never run against a live provider, and diagnosis quality
+on non-Claude models is unmeasured.
 
 ## Deploy to your AWS account
 
@@ -150,56 +244,103 @@ pause investigations and stop chat ([operations](docs/OPERATE.md)).
 
 ## FAQ
 
-**Does Tracaus change my servers?** No. Its tools only read CloudWatch logs and
-metrics, and recommendations are text for a person to review. Setup does create
-AWS resources of its own, and you install the CloudWatch agent on your servers
-yourself ([server setup](docs/SERVERS.md)).
+<details>
+<summary><strong>Does Tracaus change my servers?</strong></summary>
 
-**Can I use it without OIDC/SSO?** Yes, that is the default. The UI then has one shared
-password, and chat runs with the UI's own AWS role. The instance
-allowlist, pinned tools, runtime limits, release binding and redaction still apply.
-Per-person sign-in, audit, revocation and a shared spend cap do not exist, and the
-20 requests per hour limit is per browser session, so a new session resets it.
-Anyone with the password can use the model and tools the UI role reaches and read
-every incident report. Keep the UI on `127.0.0.1` or behind your own SSO or VPN
-proxy, or use team mode. Details: [SECURITY.md](SECURITY.md).
+No. Its tools only read CloudWatch logs and metrics, and recommendations are text for a
+person to review. Setup does create AWS resources of its own, and you install the CloudWatch
+agent on your servers yourself ([server setup](docs/SERVERS.md)).
 
-**What if the model is down?** The initial alert is still sent. The investigation is
-retried within fixed limits, then recorded as degraded ("operator review
-required"). Chat shows an error with a reference.
+</details>
 
-**Is my data sent anywhere?** With Bedrock, redacted log and metric excerpts go to
-Amazon Bedrock in your account and region. With a Model API, those excerpts and the
-questions you type leave your AWS account for the provider's HTTPS endpoint. That
-provider sets its own retention and quotas and bills you. Reports are stored in a
-private, versioned S3 bucket you own. Output is redacted by pattern matching before
-it returns to the model or is stored; this is best effort, not a guarantee. Tracaus
-makes no calls to the maintainers, and Streamlit usage statistics are turned off.
+<details>
+<summary><strong>Can I use it without OIDC/SSO?</strong></summary>
 
-**Can I use a model other than Bedrock?** Yes, on standalone Lambda: an
-OpenAI-compatible endpoint with tool calling, or the Anthropic Messages API. Run the
-paid staging canary and the [diagnostic evaluation](evaluations/diagnostics/README.md)
-against it first. An OpenAI-compatible endpoint has no token-count call, so Tracaus
-reserves a local estimate that is not an upper bound. It stops the run if the provider
-reports more input than estimated, or no usage.
+Yes, that is the default. The UI then has one shared password, and chat runs with the UI's own
+AWS role. The instance allowlist, pinned tools, runtime limits, release binding and redaction
+still apply. Per-person sign-in, audit, revocation and a shared spend cap do not exist, and the
+20 requests per hour limit is per browser session, so a new session resets it. Anyone with the
+password can use the model and tools the UI role reaches and read every incident report. Keep
+the UI on `127.0.0.1` or behind your own SSO or VPN proxy, or use team mode. Details:
+[SECURITY.md](SECURITY.md).
 
-**What is not supported yet?** Automatic discovery (you list instances and ECS services), EKS,
-Network and Gateway load balancers in front of ECS,
-health probes of private VPC-only endpoints, a desktop app, Windows servers (the
-telemetry setup is for Linux EC2) and a Model API with AgentCore.
+</details>
+
+<details>
+<summary><strong>What if the model is down?</strong></summary>
+
+The initial alert is still sent. The investigation is retried within fixed limits, then
+recorded as degraded ("operator review required"). Chat shows an error with a reference.
+
+</details>
+
+<details>
+<summary><strong>Is my data sent anywhere?</strong></summary>
+
+With Bedrock, redacted log and metric excerpts go to Amazon Bedrock in your account and region.
+With a Model API, those excerpts and the questions you type leave your AWS account for the
+provider's HTTPS endpoint. That provider sets its own retention and quotas and bills you.
+Reports are stored in a private, versioned S3 bucket you own. Output is redacted by pattern
+matching before it returns to the model or is stored; this is best effort, not a guarantee.
+Tracaus makes no calls to the maintainers, and Streamlit usage statistics are turned off.
+
+</details>
+
+<details>
+<summary><strong>Can I use a model other than Bedrock?</strong></summary>
+
+Yes, on standalone Lambda: an OpenAI-compatible endpoint with tool calling, or the Anthropic
+Messages API. Run the paid staging canary and the
+[diagnostic evaluation](evaluations/diagnostics/README.md) against it first. An OpenAI-compatible
+endpoint has no token-count call, so Tracaus reserves a local estimate that is not an upper
+bound. It stops the run if the provider reports more input than estimated, or no usage.
+
+</details>
+
+<details>
+<summary><strong>What is not supported yet?</strong></summary>
+
+Automatic discovery (you list instances and ECS services), EKS, Network and Gateway load
+balancers in front of ECS, health probes of private VPC-only endpoints, a desktop app, Windows
+servers (the telemetry setup is for Linux EC2) and a Model API with AgentCore.
+
+</details>
 
 ## Documentation
 
 1. [Prerequisites](docs/PREREQUISITES.md): what must exist and be decided before you run the deploy tool.
 2. [Deployment guide](docs/DEPLOY.md): prerequisites, costs, setup, optional team mode and Model API.
-3. [Server setup](docs/SERVERS.md): CloudWatch agent, heartbeat and Nginx on your hosts.
+3. [Server setup](docs/SERVERS.md): CloudWatch agent, heartbeat and Nginx on your hosts, and ECS services.
 4. [Operations](docs/OPERATE.md): incidents, replay, recipients, rotation, erasure, restore.
 5. [Architecture](docs/ARCHITECTURE.md): components, workflows and a glossary.
 6. [Live acceptance](docs/ACCEPTANCE.md): the checklist to complete before relying on it.
 7. [Diagnostic evaluations](evaluations/diagnostics/README.md): synthetic cases and optional paid model tests.
 
-## Contributing and license
+## Community
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks, and
-[SECURITY.md](SECURITY.md) to report a vulnerability privately. Released under the
-[MIT license](LICENSE). Dependencies keep their own licenses.
+Questions, bug reports and feature ideas are welcome as [GitHub issues](https://github.com/hamzashah14/Tracaus/issues).
+Report a vulnerability privately, as described in [SECURITY.md](SECURITY.md).
+
+## Star History
+
+<p align="center">
+  <a href="https://www.star-history.com/?repos=hamzashah14%2FTracaus&type=date&legend=top-left">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hamzashah14/Tracaus&type=date&theme=dark&legend=top-left" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hamzashah14/Tracaus&type=date&legend=top-left" />
+      <img width="600" alt="Star History Chart" src="https://api.star-history.com/chart?repos=hamzashah14/Tracaus&type=date&legend=top-left" />
+    </picture>
+  </a>
+</p>
+
+## Contributors
+
+<a href="https://github.com/hamzashah14/Tracaus/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=hamzashah14/Tracaus&max=100&columns=20" />
+</a>
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks.
+
+## License
+
+[MIT](LICENSE). Dependencies keep their own licenses.

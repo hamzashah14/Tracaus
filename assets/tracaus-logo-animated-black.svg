@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 66 2038 380" role="img" aria-label="Tracaus">
+  <title>Tracaus</title>
+  <defs>
+    <linearGradient id="ring" gradientUnits="userSpaceOnUse" x1="268" y1="0" x2="476" y2="0">
+      <stop offset="0" stop-color="#0b64fb"/>
+      <stop offset="1" stop-color="#6e3cfa"/>
+    </linearGradient>
+    <style>
+      .trace { fill: none; stroke-width: 24; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1;
+        animation: draw 1.1s cubic-bezier(.45, .05, .2, 1) forwards; }
+      .t0 { animation-delay: .25s; } .t1 { animation-delay: .4s; } .t2 { animation-delay: .55s; }
+      .node { opacity: 0; transform-box: fill-box; transform-origin: center; animation: pop .55s cubic-bezier(.2, .9, .3, 1.3) forwards; }
+      .n0 { animation-delay: 0s; } .n1 { animation-delay: .12s; } .n2 { animation-delay: .24s; }
+      .ring { fill: none; stroke: url(#ring); stroke-width: 40; stroke-dasharray: 1; stroke-dashoffset: 1;
+        animation: draw .9s cubic-bezier(.4, 0, .2, 1) 1s forwards; }
+      .dot { opacity: 0; transform-box: fill-box; transform-origin: center;
+        animation: pop .7s cubic-bezier(.17, .89, .28, 1.28) 1.7s forwards, breathe 3.2s ease-in-out 2.6s infinite; }
+      .halo { opacity: 0; transform-box: fill-box; transform-origin: center; animation: ping 3.2s ease-out 2.6s infinite; }
+      .pulse { fill: none; stroke: #fff; stroke-width: 12; stroke-linecap: round; stroke-dasharray: .07 3;
+        stroke-dashoffset: .07; opacity: 0; animation: signal 5s ease-in-out 3s infinite; }
+      .p1 { animation-delay: 3.15s; } .p2 { animation-delay: 3.3s; }
+      .letter { opacity: 0; animation: rise .6s cubic-bezier(.2, .8, .2, 1) forwards; }
+      @keyframes draw { to { stroke-dashoffset: 0; } }
+      @keyframes pop { 0% { opacity: 0; transform: scale(.2); } 60% { opacity: 1; transform: scale(1.15); } 100% { opacity: 1; transform: scale(1); } }
+      @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+      @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+      @keyframes ping { 0% { opacity: .5; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(2); } }
+      @keyframes signal { 0% { opacity: 0; stroke-dashoffset: .07; } 4% { opacity: .85; }
+        26% { opacity: .85; stroke-dashoffset: -1; } 30%, 100% { opacity: 0; stroke-dashoffset: -1; } }
+      @media (prefers-reduced-motion: reduce) {
+        .trace, .ring, .node, .dot, .letter { animation: none !important; opacity: 1; stroke-dashoffset: 0; transform: none; }
+        .halo, .pulse { animation: none !important; opacity: 0; }
+      }
+    </style>
+  </defs>
+  <g>
+    <path class="trace t0" pathLength="1" stroke="#0b64fb" d="M60 112C170 112 164 256 274 256"/>
+    <path class="trace t1" pathLength="1" stroke="#02c98f" d="M60 256C170 256 164 256 274 256"/>
+    <path class="trace t2" pathLength="1" stroke="#6e3cfa" d="M60 400C170 400 164 256 274 256"/>
+    <circle class="node n0" cx="60" cy="112" r="22" fill="#0b64fb"/>
+    <circle class="node n1" cx="60" cy="256" r="22" fill="#02c98f"/>
+    <circle class="node n2" cx="60" cy="400" r="22" fill="#6e3cfa"/>
+    <circle class="halo" cx="372" cy="256" r="30" fill="#02c98f"/>
+    <circle class="ring" cx="372" cy="256" r="84" pathLength="1" transform="rotate(-90 372 256)"/>
+    <path class="pulse p0" pathLength="1" d="M60 112C170 112 164 256 274 256"/>
+    <path class="pulse p1" pathLength="1" d="M60 256C170 256 164 256 274 256"/>
+    <path class="pulse p2" pathLength="1" d="M60 400C170 400 164 256 274 256"/>
+    <circle class="dot" cx="372" cy="256" r="30" fill="#02c98f"/>
+  </g>
+  <g>
+    <path class="letter" style="animation-delay:1.30s" fill="#0c1222" d="M626.8 399V120.1H682.1V399ZM535.9 163.2V114H773.1V163.2Z"/>
+    <path class="letter" style="animation-delay:1.39s" fill="#0c1222" d="M805.3 399V203.2H858.6V399ZM858.6 290.9 837.8 276.9Q841.7 241.1 859.1 220.1Q876.6 199.1 909.2 199.1Q923.6 199.1 934.9 203.9Q946.2 208.7 955.3 219L922.3 257.3Q917.6 252.2 911.4 249.9Q905.1 247.5 896.9 247.5Q879.9 247.5 869.3 258.1Q858.6 268.7 858.6 290.9Z"/>
+    <path class="letter" style="animation-delay:1.48s" fill="#0c1222" d="M1063.1 403.1Q1036.4 403.1 1015.1 389.7Q993.7 376.3 981.4 353.3Q969.1 330.3 969.1 301.4Q969.1 272.2 981.4 249.2Q993.7 226.1 1015.1 212.6Q1036.4 199.1 1063.1 199.1Q1084.2 199.1 1100.9 207.8Q1117.5 216.4 1127.6 231.5Q1137.6 246.6 1138.4 265.8V336.4Q1137.6 355.6 1127.7 370.7Q1117.8 385.8 1101 394.4Q1084.2 403.1 1063.1 403.1ZM1073.1 354Q1095.4 354 1109.1 339.2Q1122.7 324.3 1122.7 301.1Q1122.7 285.5 1116.6 273.6Q1110.4 261.7 1099.2 254.9Q1088.1 248.2 1073.2 248.2Q1058.6 248.2 1047.4 254.9Q1036.3 261.7 1029.9 273.6Q1023.4 285.6 1023.4 301.1Q1023.4 316.6 1029.8 328.6Q1036.2 340.5 1047.4 347.3Q1058.6 354 1073.1 354ZM1120 399V346.4L1128.5 298.7L1120 251.3V203.2H1172.8V399Z"/>
+    <path class="letter" style="animation-delay:1.57s" fill="#0c1222" d="M1312.1 403.3Q1282.4 403.3 1258.4 389.9Q1234.4 376.5 1220.6 353.2Q1206.9 330 1206.9 301.2Q1206.9 272 1220.7 248.9Q1234.5 225.8 1258.6 212.4Q1282.6 198.9 1312.4 198.9Q1335.3 198.9 1354.7 207.3Q1374.2 215.7 1388.6 231.6L1354.2 266.2Q1346.5 257.4 1335.9 253Q1325.3 248.6 1312.4 248.6Q1297.5 248.6 1285.9 255.3Q1274.4 262 1267.8 273.6Q1261.3 285.3 1261.3 301Q1261.3 316.4 1267.8 328.3Q1274.4 340.1 1286 346.9Q1297.6 353.6 1312.4 353.6Q1325.6 353.6 1336.3 349Q1347 344.4 1354.7 335.4L1389.1 370Q1374.4 386.2 1354.9 394.7Q1335.4 403.3 1312.1 403.3Z"/>
+    <path class="letter" style="animation-delay:1.66s" fill="#0c1222" d="M1501 403.1Q1474.2 403.1 1452.9 389.7Q1431.6 376.3 1419.2 353.3Q1406.9 330.3 1406.9 301.4Q1406.9 272.2 1419.2 249.2Q1431.6 226.1 1452.9 212.6Q1474.2 199.1 1501 199.1Q1522.1 199.1 1538.7 207.8Q1555.3 216.4 1565.4 231.5Q1575.5 246.6 1576.2 265.8V336.4Q1575.5 355.6 1565.5 370.7Q1555.6 385.8 1538.8 394.4Q1522.1 403.1 1501 403.1ZM1510.9 354Q1533.2 354 1546.9 339.2Q1560.6 324.3 1560.6 301.1Q1560.6 285.5 1554.4 273.6Q1548.2 261.7 1537.1 254.9Q1525.9 248.2 1511 248.2Q1496.4 248.2 1485.3 254.9Q1474.1 261.7 1467.7 273.6Q1461.3 285.6 1461.3 301.1Q1461.3 316.6 1467.6 328.6Q1474 340.5 1485.2 347.3Q1496.4 354 1510.9 354ZM1557.8 399V346.4L1566.4 298.7L1557.8 251.3V203.2H1610.6V399Z"/>
+    <path class="letter" style="animation-delay:1.75s" fill="#0c1222" d="M1741.1 403.3Q1715.4 403.3 1695.2 392.2Q1675.1 381.2 1663.8 361.7Q1652.5 342.2 1652.5 316.8V203.2H1705.8V315.5Q1705.8 327.7 1710 336.3Q1714.1 344.9 1722.1 349.6Q1730.1 354.2 1741.2 354.2Q1757.8 354.2 1767 344.1Q1776.3 333.9 1776.3 315.5V203.2H1829.6V316.8Q1829.6 342.5 1818.3 362Q1807.1 381.5 1787.1 392.4Q1767.2 403.3 1741.1 403.3Z"/>
+    <path class="letter" style="animation-delay:1.84s" fill="#0c1222" d="M1939.1 403.6Q1922.3 403.6 1906.4 399.2Q1890.5 394.7 1877.1 386.7Q1863.6 378.6 1853.9 367.4L1885.6 335.4Q1895.6 346.6 1908.9 352.4Q1922.2 358.3 1938.4 358.3Q1951.4 358.3 1958.1 354.5Q1964.9 350.7 1964.9 343.5Q1964.9 335.4 1957.7 331Q1950.6 326.6 1939.3 323.4Q1928.1 320.2 1915.6 316.6Q1903.1 312.9 1891.8 306.5Q1880.5 300.1 1873.5 288.9Q1866.4 277.7 1866.4 259.9Q1866.4 241.2 1875.6 227.5Q1884.8 213.7 1901.7 206.1Q1918.7 198.4 1941.9 198.4Q1966.1 198.4 1985.8 206.9Q2005.5 215.4 2018.3 232.3L1986.5 264.3Q1977.5 253.6 1966.3 248.6Q1955 243.7 1942.4 243.7Q1930.4 243.7 1924.2 247.3Q1917.9 250.9 1917.9 257.5Q1917.9 264.7 1925 268.8Q1932.1 272.8 1943.4 275.9Q1954.6 278.9 1967.1 282.8Q1979.5 286.7 1990.7 293.5Q2002 300.4 2009.1 311.7Q2016.2 323.1 2016.2 341.2Q2016.2 369.9 1995.4 386.7Q1974.6 403.6 1939.1 403.6Z"/>
+  </g>
+</svg>
