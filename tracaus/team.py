@@ -16,7 +16,9 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-INSTANCE = re.compile(r"i-(?:[0-9a-f]{8}|[0-9a-f]{17})\Z")
+INSTANCE = re.compile(
+    r"(?:i-(?:[0-9a-f]{8}|[0-9a-f]{17})|ecs-[a-z0-9_]{1,24})\Z"
+)  # an EC2 instance or ECS service
 ISSUER = re.compile(r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~/-]*)?\Z")
 SUBJECT = re.compile(r"\S{1,256}\Z")
 ROLES = ("viewer", "investigator")

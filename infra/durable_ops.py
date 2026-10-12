@@ -12,7 +12,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from infra import durable, durable_templates, owned_ops, reconcile, release, templates
 from infra.aws import clients
-from infra.spec import ROOT, alarm_descriptors, digest, name, prefix, tags
+from infra.spec import ROOT, alarm_descriptors, digest, event_rules, name, prefix, tags, tool_bindings
 from infra.verify import (
     PendingConfirmation,
     VerificationError,
@@ -115,7 +115,7 @@ def collect(bundle, stage, factory=clients):
             n + "VersionArn" for n in ("Ingress", "Dispatch", "Investigate", "Initial", "Report", "Reconcile")
         }
     elif stage == "owned-tools":
-        required = {"LogsVersionArn", "MetricsVersionArn"}
+        required = set(tool_bindings(spec))
     elif stage == "agentcore-runtime":
         required = {"RuntimeArn", "RuntimeId", "RuntimeVersion"}
     elif stage == "agentcore-endpoint":
@@ -449,7 +449,9 @@ def verify_routing(bundle):
         spec,
         clients,
         outputs["IngressQueueArn"],
-        ec2_targets=desired["Ec2Down"]["Properties"]["Targets"],
+        rule_targets={
+            logical: desired[logical]["Properties"]["Targets"] for logical in event_rules(spec).values()
+        },
     )
     return {"status": "PASS", "scope": "registration only; live delivery and latency still need tests"}
 

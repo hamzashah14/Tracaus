@@ -1,6 +1,7 @@
 """Durable incident handlers. Each SQS record acknowledges only after its durable handoff."""
 
 import hashlib
+import json
 import os
 import re
 import time
@@ -57,6 +58,7 @@ def ingest(event, context=None):
     region = env("MONITOR_REGION")
     prefix = env("ALARM_NAME_PREFIX")
     retention = int(env("INCIDENT_RETENTION_DAYS"))
+    ecs_targets = json.loads(os.getenv("ECS_TARGETS") or "{}")
 
     def one(record):
         try:
@@ -69,6 +71,7 @@ def ingest(event, context=None):
                 prefix,
                 canary_topic=os.getenv("CANARY_TOPIC_ARN"),
                 track_recovery=os.getenv("TRACK_ALARM_RECOVERY") == "true",
+                ecs=ecs_targets,
             )
             source["ingested_at"] = source["received_at"]
             sent = datetime.fromtimestamp(int(record["attributes"]["SentTimestamp"]) / 1000, timezone.utc)

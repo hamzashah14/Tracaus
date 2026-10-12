@@ -10,6 +10,9 @@ import json
 from infra.spec import (
     alarm_descriptors,
     digest,
+    ecs_services,
+    ecs_targets,
+    event_rules,
     existing_log_groups,
     log_groups,
     log_prefix,
@@ -18,6 +21,7 @@ from infra.spec import (
     readable_log_groups,
     recipients,
     tags,
+    targets,
     topic_arn,
 )
 
@@ -189,6 +193,10 @@ def foundation(spec, purpose):
                 "SNS::Topic", {"TopicName": name(spec, suffix), "Tags": tagged(spec)}, retain=True
             )
             t["Outputs"][key + "Arn"] = {"Value": ref(key)}
+        rule_arns = [
+            f"arn:aws:events:{region}:{spec['account_id']}:rule/{name(spec, key)}"
+            for key in event_rules(spec)
+        ]
         r["TopicPolicies"] = resource(
             "SNS::TopicPolicy",
             {
@@ -203,7 +211,7 @@ def foundation(spec, purpose):
                             Condition={
                                 "StringEquals": {"aws:SourceAccount": spec["account_id"]},
                                 "ArnEquals": {
-                                    "aws:SourceArn": f"arn:aws:events:{region}:{spec['account_id']}:rule/{name(spec, 'ec2-down')}"
+                                    "aws:SourceArn": rule_arns[0] if len(rule_arns) == 1 else rule_arns
                                 },
                             },
                         ),
@@ -320,8 +328,9 @@ def tools_release(spec, artifacts, secret):
         "ENVIRONMENT": spec["environment"],
         "EXPECTED_ACCOUNT_ID": spec["account_id"],
         "LOG_GROUP_PREFIX": log_prefix(spec),
-        "ALLOWED_INSTANCE_IDS": ",".join(i["id"] for i in spec["instances"]),
+        "ALLOWED_INSTANCE_IDS": ",".join(targets(spec)),
         "LOG_SCOPE_FILE": "config/log-scope.json",
+        **({"ECS_TARGETS_FILE": "config/ecs-targets.json"} if ecs_services(spec) else {}),
     }
     logs_env = {
         **common,
@@ -370,7 +379,53 @@ def tools_release(spec, artifacts, secret):
         ],
         30,
     )
+    if ecs_services(spec):
+        region_only = {"StringEquals": {"aws:RequestedRegion": spec["monitor_region"]}}
+        monitor, account = spec["monitor_region"], spec["account_id"]
+        add_function(
+            t,
+            spec,
+            "Ecs",
+            "fetch_ecs",
+            artifacts["fetch_ecs"],
+            common,
+            region,
+            [
+                statement(
+                    "ecs:DescribeServices",
+                    [
+                        f"arn:aws:ecs:{monitor}:{account}:service/{item['cluster']}/{item['service']}"
+                        for item in ecs_services(spec)
+                    ],
+                ),
+                statement(
+                    ["ecs:ListTasks", "ecs:DescribeTasks"],
+                    "*",
+                    Condition={
+                        "ArnEquals": {
+                            "ecs:cluster": sorted({e["cluster_arn"] for e in ecs_targets(spec).values()})
+                        },
+                        **region_only,
+                    },
+                ),
+                statement("ecs:DescribeTaskDefinition", "*", Condition=region_only),
+                *(
+                    [statement("elasticloadbalancing:DescribeTargetHealth", "*", Condition=region_only)]
+                    if any(item["load_balancer"] for item in ecs_services(spec))
+                    else []
+                ),
+            ],
+            30,
+        )
     return t
+
+
+def alarm_owner(spec, alarm):
+    """Who owns the service an alarm watches. Only observed EC2 services have one."""
+    return alarm.get("owner") or next(
+        (s["owner"] for s in spec["observability"]["services"] if s["instance_id"] == alarm["instance_id"]),
+        None,
+    )
 
 
 def service_routing(spec):
@@ -386,42 +441,51 @@ def service_routing(spec):
             "SNS::Subscription",
             {"Protocol": "email", "Endpoint": address, "TopicArn": topic_arn(spec, "reports")},
         )
-    r["Ec2Down"] = resource(
-        "Events::Rule",
-        {
-            "Name": name(spec, "ec2-down"),
-            "State": "DISABLED" if spec["maintenance_mode"] else "ENABLED",
-            "EventPattern": {
-                "source": ["aws.ec2"],
-                "detail-type": ["EC2 Instance State-change Notification"],
-                "detail": {
-                    "state": ["stopped", "terminated"],
-                    "instance-id": [i["id"] for i in spec["instances"]],
+    if spec["instances"]:
+        r["Ec2Down"] = resource(
+            "Events::Rule",
+            {
+                "Name": name(spec, "ec2-down"),
+                "State": "DISABLED" if spec["maintenance_mode"] else "ENABLED",
+                "EventPattern": {
+                    "source": ["aws.ec2"],
+                    "detail-type": ["EC2 Instance State-change Notification"],
+                    "detail": {
+                        "state": ["stopped", "terminated"],
+                        "instance-id": [i["id"] for i in spec["instances"]],
+                    },
                 },
+                "Targets": [{"Id": "alarms", "Arn": topic_arn(spec, "alarms")}],
+                "Tags": tagged(spec),
             },
-            "Targets": [{"Id": "alarms", "Arn": topic_arn(spec, "alarms")}],
-            "Tags": tagged(spec),
-        },
-    )
+        )
+    if ecs_services(spec):
+        r["EcsDown"] = resource(
+            "Events::Rule",
+            {
+                "Name": name(spec, "ecs-down"),
+                "State": "DISABLED" if spec["maintenance_mode"] else "ENABLED",
+                "EventPattern": {
+                    "source": ["aws.ecs"],
+                    "detail-type": ["ECS Task State Change"],
+                    "detail": {
+                        "lastStatus": ["STOPPED"],
+                        "clusterArn": sorted({item["cluster_arn"] for item in ecs_targets(spec).values()}),
+                        "group": sorted({f"service:{item['service']}" for item in ecs_services(spec)}),
+                    },
+                },
+                "Targets": [{"Id": "alarms", "Arn": topic_arn(spec, "alarms")}],
+                "Tags": tagged(spec),
+            },
+        )
     for alarm in alarm_descriptors(spec):
         r["Alarm" + digest(alarm["id"])[:16]] = resource(
             "CloudWatch::Alarm",
             {
                 "AlarmName": alarm["alarm_name"],
                 **(
-                    {
-                        "AlarmDescription": "Owner: "
-                        + (
-                            alarm.get("owner")
-                            or next(
-                                s["owner"]
-                                for s in spec["observability"]["services"]
-                                if s["instance_id"] == alarm["instance_id"]
-                            )
-                        )
-                        + "; docs/OPERATE.md"
-                    }
-                    if "observability" in spec
+                    {"AlarmDescription": f"Owner: {owner}; docs/OPERATE.md"}
+                    if "observability" in spec and (owner := alarm_owner(spec, alarm))
                     else {}
                 ),
                 "Namespace": alarm["namespace"],

@@ -9,6 +9,8 @@ from botocore.exceptions import ClientError
 from infra.spec import (
     alarm_descriptors,
     digest,
+    ecs_services,
+    event_rules,
     existing_log_groups,
     log_groups,
     name,
@@ -79,26 +81,77 @@ def exact_metric_exists(client, descriptor):
             return False
 
 
+def assert_ecs_inventory(spec, clients):
+    """Every ECS service exists and is ACTIVE, and a declared ALB is the one the service really uses."""
+    by_cluster = {}
+    for item in ecs_services(spec):
+        by_cluster.setdefault(item["cluster"], []).append(item)
+    if not by_cluster:
+        return
+    region = spec["monitor_region"]
+    ecs = clients("ecs", region)
+    for cluster, items in by_cluster.items():
+        try:
+            found = {
+                s["serviceName"]: s
+                for s in ecs.describe_services(cluster=cluster, services=[i["service"] for i in items])[
+                    "services"
+                ]
+            }
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ClusterNotFoundException":
+                raise
+            found = {}
+        for item in items:
+            service = found.get(item["service"])
+            if not service or service.get("status") != "ACTIVE":
+                raise VerificationError(
+                    f"Create the ECS service for {item['id']} (its cluster and service must exist and be ACTIVE) before deployment"
+                )
+            balancer = item["load_balancer"]
+            if balancer is None:
+                continue
+            attached = sorted(
+                lb["targetGroupArn"] for lb in service.get("loadBalancers", []) if "targetGroupArn" in lb
+            )
+            if balancer["target_group_arn"] not in attached:
+                raise VerificationError(
+                    f"{item['id']}: the service does not use the load_balancer target group; it uses {attached or 'none'}"
+                )
+            group = clients("elbv2", region).describe_target_groups(
+                TargetGroupArns=[balancer["target_group_arn"]]
+            )["TargetGroups"][0]
+            if balancer["load_balancer_arn"] not in group.get("LoadBalancerArns", []):
+                raise VerificationError(
+                    f"{item['id']}: the target group belongs to {group.get('LoadBalancerArns') or 'no load balancer'}, "
+                    "not the declared load_balancer_arn"
+                )
+
+
 def coverage(spec, clients):
     """All required telemetry and filter fixtures must succeed before promotion."""
     checks = []
     assert_account(clients("sts", spec["monitor_region"]), spec)
     assert_concurrency(clients("lambda", spec["monitor_region"]), spec["reserved_concurrency"])
-    ec2 = clients("ec2", spec["monitor_region"])
     expected = {item["id"] for item in spec["instances"]}
-    response = ec2.describe_instances(InstanceIds=sorted(expected))
-    actual = {
-        i["InstanceId"]
-        for reservation in response["Reservations"]
-        for i in reservation["Instances"]
-        if i["State"]["Name"] not in {"terminated", "shutting-down"}
-    }
-    if expected != actual:
-        raise VerificationError("Inventory includes missing or terminated instances")
+    if expected:  # DescribeInstances with no IDs lists every instance in the account
+        response = clients("ec2", spec["monitor_region"]).describe_instances(InstanceIds=sorted(expected))
+        actual = {
+            i["InstanceId"]
+            for reservation in response["Reservations"]
+            for i in reservation["Instances"]
+            if i["State"]["Name"] not in {"terminated", "shutting-down"}
+        }
+        if expected != actual:
+            raise VerificationError("Inventory includes missing or terminated instances")
+    assert_ecs_inventory(spec, clients)
     cw = clients("cloudwatch", spec["monitor_region"])
     for descriptor in alarm_descriptors(spec):
         if descriptor["namespace"].endswith("/Health") and not spec["observability"]["enabled"]:
             checks.append({"id": descriptor["id"], "status": "disabled_by_reviewed_inventory"})
+            continue
+        if descriptor.get("sparse"):
+            checks.append({"id": descriptor["id"], "status": "reported_only_when_nonzero"})
             continue
         if not exact_metric_exists(cw, descriptor):
             raise VerificationError(f"Required metric unavailable: {descriptor['id']}")
@@ -169,21 +222,25 @@ def routing_health(
     clients,
     ingress_arn,
     *,
-    ec2_targets=None,
+    rule_targets=None,
 ):
     from infra.templates import service_routing
 
     expected = service_routing(spec)["Resources"]
     events = clients("events", spec["monitor_region"])
-    rule = events.describe_rule(Name=name(spec, "ec2-down"))
-    if rule["State"] != ("DISABLED" if spec["maintenance_mode"] else "ENABLED"):
-        raise VerificationError("EC2 state rule enablement differs from the intended mode")
-    if json.loads(rule["EventPattern"]) != expected["Ec2Down"]["Properties"]["EventPattern"]:
-        raise VerificationError("EC2 state rule inventory or event selection differs from the plan")
-    result = events.list_targets_by_rule(Rule=name(spec, "ec2-down"))
-    wanted_targets = ec2_targets or [{"Id": "alarms", "Arn": topic_arn(spec, "alarms")}]
-    if result.get("NextToken") or result["Targets"] != wanted_targets:
-        raise VerificationError("EC2 rule target differs from desired routing")
+    for suffix, logical in event_rules(spec).items():
+        label = "EC2" if suffix == "ec2-down" else "ECS"
+        rule = events.describe_rule(Name=name(spec, suffix))
+        if rule["State"] != ("DISABLED" if spec["maintenance_mode"] else "ENABLED"):
+            raise VerificationError(f"{label} state rule enablement differs from the intended mode")
+        if json.loads(rule["EventPattern"]) != expected[logical]["Properties"]["EventPattern"]:
+            raise VerificationError(f"{label} state rule inventory or event selection differs from the plan")
+        result = events.list_targets_by_rule(Rule=name(spec, suffix))
+        wanted_targets = (rule_targets or {}).get(logical) or [
+            {"Id": "alarms", "Arn": topic_arn(spec, "alarms")}
+        ]
+        if result.get("NextToken") or result["Targets"] != wanted_targets:
+            raise VerificationError(f"{label} rule target differs from desired routing")
     sns = clients("sns", spec["monitor_region"])
     pending = []
     for topic, protocol, endpoints in (

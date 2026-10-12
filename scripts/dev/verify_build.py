@@ -13,11 +13,21 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from infra.observations import build_release  # noqa: E402
-from infra.spec import load  # noqa: E402
-from scripts.build_lambdas import PIPELINE_FUNCTIONS, build  # noqa: E402
+from infra.spec import ecs_targets, load  # noqa: E402
+from scripts.build_lambdas import FUNCTIONS, PIPELINE_FUNCTIONS, build  # noqa: E402
 
 CATALOG = ROOT / "config/metric-catalog.json"
 WHEELS = ROOT / ".build/wheels"
+ECS_TARGETS = ROOT / ".build/ecs-targets.json"
+
+
+def build_with_ecs(out):
+    """The three tools of a deployment that lists ECS services, packaged with their ecs-targets.json."""
+    ECS_TARGETS.parent.mkdir(parents=True, exist_ok=True)
+    ECS_TARGETS.write_text(json.dumps(ecs_targets(load(ROOT / "examples/ecs.example.json"))))
+    return build(FUNCTIONS, out, CATALOG, WHEELS, ecs_path=ECS_TARGETS)
+
+
 LAMBDA_IMPORT = "import boto3,lambda_function; print(boto3.__version__)"
 
 # Per target: output dir prefix (.build/<dir>-a and -b), builder(output), the statement run under
@@ -40,6 +50,13 @@ TARGETS = {
         "import": "import boto3,lambda_function; from tracaus.metrics import catalog; "
         "assert isinstance(catalog(),list); print(boto3.__version__)",
         "mismatch": "Independent builds do not match",
+    },
+    "ecs-tools": {
+        "dir": "ecs-tools",
+        "build": build_with_ecs,
+        "import": "import boto3,lambda_function; from tracaus.metrics import ecs_targets; "
+        "assert ecs_targets(); print(boto3.__version__)",
+        "mismatch": "Independent ECS tool builds do not match",
     },
     "pipeline": {
         "dir": "pipeline",

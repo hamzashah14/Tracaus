@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from infra import owned_runtime, release
+from infra.spec import TOOL_LOGICAL, canary_target, canary_tools, tool_functions
 from infra.verify import VerificationError, coverage, verify_function
 from tracaus.runtime import sdk_client
 
@@ -73,7 +74,8 @@ def verify_candidate(bundle, factory):
     assert_account(factory("sts", spec["monitor_region"]), spec)
     owned_runtime.validate_bindings(spec, config, bindings)
     planned = sealed(bundle, "owned-tools", factory)
-    for logical, function in (("Logs", "fetch_logs"), ("Metrics", "fetch_metrics")):
+    for function in tool_functions(spec):
+        logical = TOOL_LOGICAL[function]
         arn = bindings["tools"][logical + "VersionArn"]
         client = factory("lambda", spec["bedrock_region"])
         got = verify_function(client, arn, bindings["tool_artifacts"][function])
@@ -178,13 +180,18 @@ def canary(bundle, factory, *, allow_model_invocation=False, client=None):
     verify_candidate(bundle, factory)
     coverage(bundle["spec"], factory)
     release_hash = owned_runtime.fingerprint(bundle["spec"], bundle["config"], bundle["bindings"])
-    iid = bundle["spec"]["instances"][0]["id"]
+    iid = canary_target(bundle["spec"])
+    window = bundle["config"]["runtime_limits"]["window_minutes"]
     payload = {
         "version": 1,
         "release": release_hash,
         "mode": "chat",
         "history": [],
-        "prompt": f"Investigate instance {iid} using fetch_logs discovery/search and fetch_metrics. State missing data and uncertainty; use a window of at most {bundle['config']['runtime_limits']['window_minutes']} minutes per side.",
+        "prompt": (
+            f"Investigate ECS service {iid} using fetch_ecs and fetch_metrics (and fetch_logs discovery/search if it has log groups). State missing data and uncertainty; use a window of at most {window} minutes per side."
+            if iid.startswith("ecs-")
+            else f"Investigate instance {iid} using fetch_logs discovery/search and fetch_metrics. State missing data and uncertainty; use a window of at most {window} minutes per side."
+        ),
     }
     client = client or sdk_client("lambda", bundle["spec"]["monitor_region"], 210)
     response = client.invoke(
@@ -203,8 +210,8 @@ def canary(bundle, factory, *, allow_model_invocation=False, client=None):
     if (
         result.get("release") != release_hash
         or result.get("complete") is not True
-        or set(result.get("tools", [])) != {"fetch_logs", "fetch_metrics"}
-        or set(result.get("evidence", [])) != {"fetch_logs", "fetch_metrics"}
+        or not canary_tools(bundle["spec"]) <= set(result.get("tools", []))
+        or not canary_tools(bundle["spec"]) <= set(result.get("evidence", []))
         or not result.get("text")
         or result.get("diagnosis", {}).get("status") != "VALID"
         or result.get("diagnosis", {}).get("policy") != "diagnosis-v1"

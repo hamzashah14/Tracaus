@@ -5,7 +5,9 @@ import os
 import re
 from pathlib import Path
 
-INSTANCE = re.compile(r"i-(?:[0-9a-f]{8}|[0-9a-f]{17})")
+INSTANCE = re.compile(
+    r"i-(?:[0-9a-f]{8}|[0-9a-f]{17})|ecs-[a-z0-9_]{1,24}"
+)  # an EC2 instance or an ECS service
 STATISTICS = {"Average", "Maximum", "Minimum", "Sum", "SampleCount"}
 EC2_METRICS = {
     "CPUUtilization",
@@ -34,6 +36,21 @@ EC2_METRICS = {
     "MetadataNoToken",
 }
 CW_METRICS = {"mem_used_percent", "swap_used_percent", "disk_used_percent", "procstat_lookup_pid_count"}
+# ECS: what each service publishes by default, then Container Insights (opt-in) and the ALB (when one is in front).
+ECS_METRICS = {"CPUUtilization": "Average", "MemoryUtilization": "Average"}
+INSIGHTS_METRICS = {
+    "RunningTaskCount": "Average",
+    "DesiredTaskCount": "Average",
+    "PendingTaskCount": "Average",
+}
+ALB_METRICS = {
+    "HTTPCode_Target_5XX_Count": "Sum",
+    "HTTPCode_Target_4XX_Count": "Sum",
+    "RequestCount": "Sum",
+    "TargetResponseTime": "Average",
+    "UnHealthyHostCount": "Maximum",
+    "HealthyHostCount": "Minimum",
+}
 UNITS = {
     "Seconds",
     "Microseconds",
@@ -115,9 +132,40 @@ def catalog():
     return validate_catalog(json.loads(path.read_text()))
 
 
+def ecs_targets():
+    """{target ID: cluster, service and ALB dimensions} packaged with the tools; empty without ECS services."""
+    path = Path(os.getenv("ECS_TARGETS_FILE", "config/ecs-targets.json"))
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def ecs_builtin(iid, metric, namespace):
+    """Namespace, dimensions and default statistic for a built-in ECS metric. Names never come from the model."""
+    where = ecs_targets().get(iid)
+    if where is None:
+        raise ValueError("This ECS service has no packaged metric scope; redeploy the tools.")
+    service = {"ClusterName": where["cluster"], "ServiceName": where["service"]}
+    balancer = where["load_balancer"]
+    for names, home, dims, enabled in (
+        (ECS_METRICS, "AWS/ECS", service, True),
+        (INSIGHTS_METRICS, "ECS/ContainerInsights", service, where["container_insights"]),
+        (
+            ALB_METRICS,
+            "AWS/ApplicationELB",
+            balancer and {"LoadBalancer": balancer["LoadBalancer"], "TargetGroup": balancer["TargetGroup"]},
+            balancer,
+        ),
+    ):
+        if metric in names and enabled and namespace in (None, "", home):
+            return home, dict(dims), names[metric]
+    raise ValueError(
+        "Unsupported metric/namespace for this ECS service (Container Insights and ALB metrics exist only "
+        "when configured). Use an allowlisted metric_id."
+    )
+
+
 def allowed_instance(value):
     if not isinstance(value, str) or not INSTANCE.fullmatch(value):
-        raise ValueError("A valid instance_id is required.")
+        raise ValueError("A valid instance_id (an EC2 instance or ECS service ID) is required.")
     allowed = {item.strip() for item in os.getenv("ALLOWED_INSTANCE_IDS", "").split(",") if item.strip()}
     if not allowed:
         raise ValueError("Metric scope is not configured; set ALLOWED_INSTANCE_IDS.")
@@ -144,6 +192,21 @@ def resolve(params):
         if params.get("path") and params["path"] != match["dimensions"].get("path"):
             raise ValueError("Path conflicts with the configured descriptor.")
         descriptor = dict(match)
+    elif iid.startswith("ecs-"):
+        namespace, dims, default = ecs_builtin(iid, metric, namespace)
+        if params.get("path"):
+            raise ValueError("path is only supported for a configured disk metric.")
+        statistic = params.get("statistic") or default
+        if statistic not in STATISTICS:
+            raise ValueError("Unsupported statistic.")
+        descriptor = {
+            "id": "builtin",
+            "instance_id": iid,
+            "namespace": namespace,
+            "metric_name": metric,
+            "statistic": statistic,
+            "dimensions": dims,
+        }
     else:
         if metric in EC2_METRICS and namespace in (None, "", "AWS/EC2"):
             namespace, dims, default = "AWS/EC2", {"InstanceId": iid}, "Average"

@@ -5,7 +5,17 @@ import json
 import re
 from dataclasses import asdict
 
-from infra.spec import ROOT, digest, name, prefix, tags
+from infra.spec import (
+    ROOT,
+    TOOL_LOGICAL,
+    digest,
+    ecs_services,
+    name,
+    prefix,
+    tags,
+    targets,
+    tool_functions,
+)
 from infra.templates import att, resource, role, statement, tagged, template
 from infra.verify import VerificationError
 from tracaus.agentcore import validate_target
@@ -47,9 +57,10 @@ def validate_bindings(spec, config, bindings):
             )
         model_secret(spec, bindings)
     tools = bindings.get("tools", {})
-    if set(tools) != {"LogsVersionArn", "MetricsVersionArn"}:
-        raise VerificationError("Both tool version bindings are required")
-    for key, function in (("LogsVersionArn", "fetch-logs"), ("MetricsVersionArn", "fetch-metrics")):
+    wanted = {TOOL_LOGICAL[f] + "VersionArn": f.replace("_", "-") for f in tool_functions(spec)}
+    if set(tools) != set(wanted):
+        raise VerificationError("Every tool version binding the deployment needs is required")
+    for key, function in wanted.items():
         prefix = f"arn:aws:lambda:{spec['bedrock_region']}:{spec['account_id']}:function:{name(spec, function, True)}:"
         if not isinstance(tools[key], str) or not re.fullmatch(
             re.escape(prefix) + r"[1-9][0-9]*", tools[key]
@@ -96,6 +107,7 @@ def fingerprint(spec, config, bindings):
                     "agent-instruction.txt",
                     "schemas/fetch_logs.json",
                     "schemas/fetch_metrics.json",
+                    *(["schemas/fetch_ecs.json"] if ecs_services(spec) else []),
                     "tracaus/diagnosis.py",
                     "tracaus/safety.py",
                 )
@@ -127,9 +139,14 @@ def environment(spec, config, bindings):
         "BEDROCK_REGION": spec["bedrock_region"],
         "BEDROCK_MODEL_ID": spec["model_id"],
         "EXPECTED_ACCOUNT_ID": spec["account_id"],
-        "ALLOWED_INSTANCE_IDS": ",".join(i["id"] for i in spec["instances"]),
+        "ALLOWED_INSTANCE_IDS": ",".join(targets(spec)),
         "LOGS_TOOL_ARN": bindings["tools"]["LogsVersionArn"],
         "METRICS_TOOL_ARN": bindings["tools"]["MetricsVersionArn"],
+        **(
+            {"ECS_TOOL_ARN": bindings["tools"]["EcsVersionArn"]}
+            if "EcsVersionArn" in bindings["tools"]
+            else {}
+        ),
         "RUNTIME_LIMITS": json.dumps(config["runtime_limits"], sort_keys=True, separators=(",", ":")),
         "RUNTIME_RELEASE": fingerprint(spec, config, bindings),
         **({"MODEL_API": model_api_environment(spec, bindings)} if model_api(spec) else {}),
@@ -164,8 +181,8 @@ def caller_environment(spec, config, bindings):
         env.update(
             {"AGENTCORE_RUNTIME_ARN": remote["RuntimeArn"], "AGENTCORE_ENDPOINT": remote["EndpointName"]}
         )
-        for key in ("LOGS_TOOL_ARN", "METRICS_TOOL_ARN"):
-            del env[key]  # Caller is not a tool executor.
+        for key in ("LOGS_TOOL_ARN", "METRICS_TOOL_ARN", "ECS_TOOL_ARN"):
+            env.pop(key, None)  # Caller is not a tool executor.
     return env
 
 

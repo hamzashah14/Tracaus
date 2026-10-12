@@ -4,7 +4,7 @@ import json
 
 from botocore.exceptions import ClientError
 
-from infra.spec import prefix
+from infra.spec import ecs_services, prefix
 from infra.templates import bucket_name
 from infra.verify import VerificationError
 
@@ -168,7 +168,7 @@ def permission_requests(spec, config):
             )
     # Verification needs reads as well as create/write permission. These are
     # scoped screens; data/resource conditions may require customer context.
-    for service, actions in {
+    reads = {
         "iam": ["GetRole", "ListRolePolicies", "GetRolePolicy", "ListAttachedRolePolicies"],
         "lambda": [
             "GetFunction",
@@ -186,7 +186,12 @@ def permission_requests(spec, config):
         "ec2": ["DescribeInstances", "DescribeRegions"],
         "s3": ["GetBucketVersioning", "GetBucketLocation"],
         "kms": ["DescribeKey", "GetKeyPolicy"],
-    }.items():
+    }
+    if ecs_services(spec):
+        reads["ecs"] = ["DescribeServices"]
+        if any(item["load_balancer"] for item in ecs_services(spec)):
+            reads["elasticloadbalancing"] = ["DescribeTargetGroups"]
+    for service, actions in reads.items():
         region = spec["monitor_region"]
         scoped = {
             "iam": f"arn:aws:iam::{account}:role/{spec['project']}/{spec['environment']}/*",
@@ -292,16 +297,19 @@ def check(plan, factory, *, remaining_reserved=None):
     if not {spec["monitor_region"], spec["bedrock_region"]} <= enabled:
         raise VerificationError("A selected AWS region is disabled")
     expected = {i["id"] for i in spec["instances"]}
-    actual = factory("ec2", spec["monitor_region"]).describe_instances(InstanceIds=sorted(expected))
-    active = {
-        i["InstanceId"]
-        for r in actual["Reservations"]
-        for i in r["Instances"]
-        if i["State"]["Name"] not in {"terminated", "shutting-down"}
-    }
-    if active != expected:
-        raise VerificationError("Create/configure the declared EC2 inventory before deployment")
-    from infra.verify import assert_concurrency
+    if expected:  # DescribeInstances with no IDs lists every instance in the account
+        actual = factory("ec2", spec["monitor_region"]).describe_instances(InstanceIds=sorted(expected))
+        active = {
+            i["InstanceId"]
+            for r in actual["Reservations"]
+            for i in r["Instances"]
+            if i["State"]["Name"] not in {"terminated", "shutting-down"}
+        }
+        if active != expected:
+            raise VerificationError("Create/configure the declared EC2 inventory before deployment")
+    from infra.verify import assert_concurrency, assert_ecs_inventory
+
+    assert_ecs_inventory(spec, factory)
 
     requested = config["initial_reserved_concurrency"]
     assert_concurrency(

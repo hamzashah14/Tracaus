@@ -35,7 +35,7 @@ INGESTION_LAG = timedelta(minutes=3)
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 BIN_FMT = "%Y-%m-%d %H:%M"
 
-INSTANCE_ID_RE = re.compile(r"^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$")
+INSTANCE_ID_RE = re.compile(r"^(?:i-(?:[0-9a-f]{8}|[0-9a-f]{17})|ecs-[a-z0-9_]{1,24})$")
 LOG_GROUP_RE = re.compile(r"^[A-Za-z0-9_\-./#]+$")
 _REGEX_SPECIAL = set(".^$*+?()[]{}|\\/")
 
@@ -65,7 +65,8 @@ def parse_instance_id(raw):
     raw = str(raw).strip()
     if not INSTANCE_ID_RE.match(raw):
         raise BadInput(
-            f"instance_id {raw!r} is not an EC2 instance ID (i- followed by 8 or 17 hex characters)."
+            f"instance_id {raw!r} is not an EC2 instance ID (i- followed by 8 or 17 hex characters) "
+            "or an ECS service ID (ecs- followed by letters, digits or underscores)."
         )
     return raw
 
@@ -277,7 +278,8 @@ def configured_log_scope():
     if not path:
         return None  # Development only; deployed tools require a packaged scope.
     value = json.loads(Path(path).read_text())
-    empty_ok = bool(os.getenv("EXISTING_LOG_GROUPS_FILE"))  # an instance may have only existing groups
+    # An instance may have only existing groups, and an ECS service may log nowhere Tracaus can read.
+    empty_ok = bool(os.getenv("EXISTING_LOG_GROUPS_FILE") or os.getenv("ECS_TARGETS_FILE"))
     if (
         not isinstance(value, list)
         or (not value and not empty_ok)

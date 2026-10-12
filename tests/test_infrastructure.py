@@ -374,8 +374,8 @@ def test_changed_retirement_plan_cannot_mutate(spec):
     factory.return_value.disable_alarm_actions.assert_not_called()
 
 
-def test_receipt_requires_exact_recent_candidate():
-    bundle = {"review_hash": "this-release"}
+def test_receipt_requires_exact_recent_candidate(spec):
+    bundle = {"review_hash": "this-release", "spec": spec}
     record = {
         "bundle_hash": "this-release",
         "status": "PASS",

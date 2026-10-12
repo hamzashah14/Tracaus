@@ -9,6 +9,29 @@ from tracaus.time import iso_utc, parse_utc
 
 MAX_SOURCE_BYTES = 128 * 1024
 INSTANCE = re.compile(r"i-[0-9a-f]{17}\Z")
+TARGET = (
+    r"i-[0-9a-f]{17}|ecs-[a-z0-9_]{1,24}"  # an EC2 instance, or an ECS service labelled in deployment.json
+)
+ECS_STATES = {
+    "PROVISIONING",
+    "PENDING",
+    "ACTIVATING",
+    "RUNNING",
+    "DEACTIVATING",
+    "STOPPING",
+    "DEPROVISIONING",
+    "STOPPED",
+}
+ECS_STOP_CODES = {
+    "TaskFailedToStart",
+    "EssentialContainerExited",
+    "UserInitiated",
+    "ServiceSchedulerInitiated",
+    "SpotInterruption",
+    "TerminationNotice",
+    "InfrastructureHealth",
+}
+EVENT_ID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 
 class InvalidEvent(ValueError):
@@ -20,8 +43,30 @@ def event_identity(source, native_id, *transition):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def ecs_stop(detail):
+    """(stop code, is it an incident). Rolling deployments and scale-in stop tasks on purpose; a person stopping a
+    task is deliberate. A health-check kill uses the scheduler's code too, so only its reason text separates it."""
+    code = detail.get("stopCode")
+    code = code if code in ECS_STOP_CODES else "Unknown"
+    if code == "UserInitiated":
+        return code, False
+    if code == "ServiceSchedulerInitiated":
+        reason = detail.get("stoppedReason")
+        return code, isinstance(reason, str) and "health check" in reason.lower()
+    return code, True
+
+
 def normalize_sns(
-    raw, expected_topic, account, region, allowed, alarm_prefix, *, canary_topic=None, track_recovery=False
+    raw,
+    expected_topic,
+    account,
+    region,
+    allowed,
+    alarm_prefix,
+    *,
+    canary_topic=None,
+    track_recovery=False,
+    ecs=None,
 ):
     """The SQS body is an SNS envelope. Keep original source bytes in the private event row."""
     if not isinstance(raw, str) or len(raw.encode()) > MAX_SOURCE_BYTES:
@@ -61,9 +106,9 @@ def normalize_sns(
         name = source["AlarmName"]
         if alarm_arn != arn_prefix + name or not name.startswith(alarm_prefix):
             raise InvalidEvent("Alarm source is outside this environment")
-        match = re.fullmatch(re.escape(alarm_prefix) + r"(i-[0-9a-f]{17})-.+", name)
+        match = re.fullmatch(re.escape(alarm_prefix) + rf"({TARGET})-.+", name)
         if not match:
-            raise InvalidEvent("Alarm does not identify one inventory instance")
+            raise InvalidEvent("Alarm does not identify one inventory target")
         iid = match.group(1)
         dimensions = (source.get("Trigger") or {}).get("Dimensions", [])
         for item in dimensions:
@@ -81,7 +126,7 @@ def normalize_sns(
             or source.get("region") != region
             or source.get("source") != "aws.ec2"
             or not isinstance(native, str)
-            or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", native)
+            or not re.fullmatch(EVENT_ID, native)
         ):
             raise InvalidEvent("Unexpected EventBridge identity")
         detail = source.get("detail") or {}
@@ -92,10 +137,44 @@ def normalize_sns(
         transition = source.get("time")
         kind = "ec2"
         actionable = state in {"stopped", "terminated"}
+    elif source.get("detail-type") == "ECS Task State Change":
+        native = source.get("id", "")
+        if (
+            source.get("account") != account
+            or source.get("region") != region
+            or source.get("source") != "aws.ecs"
+            or not isinstance(native, str)
+            or not re.fullmatch(EVENT_ID, native)
+        ):
+            raise InvalidEvent("Unexpected EventBridge identity")
+        detail = source.get("detail") or {}
+        # The rule matches a cluster list and a service list separately, so only the exact pair counts.
+        iid = next(
+            (
+                target
+                for target, where in (ecs or {}).items()
+                if detail.get("clusterArn") == where["cluster_arn"]
+                and detail.get("group") == "service:" + where["service"]
+            ),
+            None,
+        )
+        state = detail.get("lastStatus")
+        if state not in ECS_STATES:
+            raise InvalidEvent("Unknown ECS transition")
+        stop_code, stopped = ecs_stop(detail)
+        transition = source.get("time")
+        kind = "ecs"
+        actionable = state == "STOPPED" and stopped
     else:
         raise InvalidEvent("Unsupported source event")
-    if iid not in allowed or not INSTANCE.fullmatch(iid):
-        raise InvalidEvent("Source instance is outside deployment inventory")
+    if (
+        not isinstance(iid, str)
+        or iid not in allowed
+        or not re.fullmatch(TARGET, iid)
+        or (kind == "ecs") != iid.startswith("ecs-")
+        and kind in {"ecs", "ec2"}
+    ):
+        raise InvalidEvent("Source target is outside deployment inventory")
     try:
         occurred_at = iso_utc(parse_utc(transition))
         if kind == "canary" and parse_utc(transition).timestamp() != source["slot"]:
@@ -125,6 +204,7 @@ def normalize_sns(
         "sns_message_id": envelope.get("MessageId"),
         "sns_timestamp": envelope.get("Timestamp"),
         "original_event": envelope["Message"],
+        **({"stop_code": stop_code} if kind == "ecs" else {}),
         **({"canary_slot": source["slot"], "investigate": False} if kind == "canary" else {}),
         **({"track_recovery": True} if kind == "alarm" and track_recovery else {}),
     }

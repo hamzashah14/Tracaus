@@ -155,7 +155,7 @@ def test_fixture_cross_scope_tool_is_denied_without_any_aws_calls():
 
 def test_default_evaluation_records_model_not_run_and_passes():
     result = evaluate_diagnostics.offline()
-    assert result["status"] == "PASS" and result["model"] is None and len(result["cases"]) == 16
+    assert result["status"] == "PASS" and result["model"] is None and len(result["cases"]) == 22
     assert result["live_model_evaluation"] == "NOT_RUN"
 
 

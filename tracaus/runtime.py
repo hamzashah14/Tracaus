@@ -19,6 +19,8 @@ from tracaus.transport import clip_utf8
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNTERS = ("tokens_reserved", "model_steps", "tool_calls", "log_queries")
+DEFAULT_TOOLS = ("fetch_logs", "fetch_metrics")  # EC2 targets; ECS services add fetch_ecs
+TOOL_NAMES = DEFAULT_TOOLS + ("fetch_ecs",)
 
 
 class RuntimeStop(Exception):
@@ -87,9 +89,9 @@ def operation(tool):
     return next(iter(schema["paths"].values()))["get"]
 
 
-def tool_configuration():
+def tool_configuration(names=DEFAULT_TOOLS):
     tools = []
-    for name in ("fetch_logs", "fetch_metrics"):
+    for name in names:
         op = operation(name)
         props = {p["name"]: {**p["schema"], "description": p["description"]} for p in op["parameters"]}
         tools.append(
@@ -146,14 +148,15 @@ class LambdaTools:
     def __init__(
         self, region, account, arns, allowed_ids, limits, reserve, anchor=None, client=None, access_guard=None
     ):
-        if set(arns) != {"fetch_logs", "fetch_metrics"} or not allowed_ids:
-            raise ValueError("Both tools and an explicit instance inventory are required")
+        if set(arns) not in (set(DEFAULT_TOOLS), set(TOOL_NAMES)) or not allowed_ids:
+            raise ValueError("The logs and metrics tools and an explicit target inventory are required")
         for arn in arns.values():
             if not re.fullmatch(
                 rf"arn:aws:lambda:{re.escape(region)}:{re.escape(account)}:function:[\w-]+:[1-9][0-9]*", arn
             ):
                 raise ValueError("Tools must be numeric Lambda versions in the intended account/region")
         self.arns, self.allowed = arns, set(allowed_ids)
+        self.tool_names = tuple(name for name in TOOL_NAMES if name in arns)
         self.limits, self.reserve, self.anchor = limits, reserve, anchor
         self.access_guard = access_guard
         self.client = client or sdk_client("lambda", region, 35)
@@ -161,12 +164,7 @@ class LambdaTools:
     def invoke(self, name, args, deadline):
         if name not in self.arns:
             raise RuntimeStop("UNKNOWN_TOOL")
-        validate(
-            args,
-            tool_configuration()["tools"][0 if name == "fetch_logs" else 1]["toolSpec"]["inputSchema"][
-                "json"
-            ],
-        )
+        validate(args, tool_configuration((name,))["tools"][0]["toolSpec"]["inputSchema"]["json"])
         params = dict(args)
         if self.access_guard:
             self.access_guard(params.get("instance_id"))
@@ -270,11 +268,13 @@ def run(
     record_usage=None,
     access_guard=None,
     progress=None,
+    required_evidence=frozenset(DEFAULT_TOOLS),
 ):
     """All side effects go through injected authorization/budget-aware adapters.
 
+    `required_evidence` names the tools an incident run must have used successfully before it may finish.
     `progress` (chat only) receives one of a fixed set of step names: "thinking", "tool:fetch_logs",
-    "tool:fetch_metrics", "tool" and "checking". It never receives model, log or user text."""
+    "tool:fetch_metrics", "tool:fetch_ecs", "tool" and "checking". It never receives model, log or user text."""
     if (
         os.getenv("ENVIRONMENT", "development") != "development"
         and os.getenv("TRACAUS_DIAGNOSTIC_POLICY") != diagnosis.VERSION
@@ -300,6 +300,8 @@ def run(
     text, evidence, seen, usage = "", set(), set(), {"input_tokens": 0, "output_tokens": 0}
     successful_tools = set()
     complete_evidence = True
+    names = getattr(tools, "tool_names", None)  # LambdaTools says which tools it can run; a stand-in may not
+    tool_config = tool_configuration(names if isinstance(names, tuple) else DEFAULT_TOOLS)
     try:
         for _ in range(limits.model_steps):
             if access_guard:
@@ -307,7 +309,7 @@ def run(
             if deadline - time.time() < 30:
                 raise RuntimeStop("DEADLINE")
             notify(progress, "thinking")
-            request = {"messages": messages, "system": system, "toolConfig": tool_configuration()}
+            request = {"messages": messages, "system": system, "toolConfig": tool_config}
             if len(json.dumps(request).encode()) > limits.context_bytes:
                 raise RuntimeStop("CONTEXT_LIMIT")
             try:
@@ -385,7 +387,7 @@ def run(
                         raise RuntimeStop("OUTPUT_LIMIT")
                 done = stop == "end_turn" and bool(text.strip()) and complete_evidence
                 if require_evidence:
-                    done = done and evidence == {"fetch_logs", "fetch_metrics"}
+                    done = done and set(required_evidence) <= evidence
                 return {
                     "version": 1,
                     "text": text.strip(),
@@ -417,7 +419,7 @@ def run(
                 seen.add(call["toolUseId"])
                 notify(
                     progress,
-                    "tool:" + call["name"] if call["name"] in {"fetch_logs", "fetch_metrics"} else "tool",
+                    "tool:" + call["name"] if call["name"] in TOOL_NAMES else "tool",
                 )
                 try:
                     result, valid = tools.invoke(call["name"], call["input"], deadline)
@@ -457,7 +459,7 @@ def run(
                         call["name"] == "fetch_logs"
                         and result.get("log_group")
                         and result.get("status") in {"ok", "no_matching_lines"}
-                    ) or (call["name"] == "fetch_metrics" and result.get("status") == "ok"):
+                    ) or (call["name"] in {"fetch_metrics", "fetch_ecs"} and result.get("status") == "ok"):
                         evidence.add(call["name"])
                 results.append(
                     {

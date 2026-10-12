@@ -8,7 +8,9 @@ from dataclasses import dataclass, field
 from tracaus import model_api
 
 REGION = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\d+$")
-INSTANCE = re.compile(r"^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$")
+INSTANCE = re.compile(
+    r"^(?:i-(?:[0-9a-f]{8}|[0-9a-f]{17})|ecs-[a-z0-9_]{1,24})$"
+)  # an EC2 instance or ECS service
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class AppConfig:
     model_api: str = ""
     local_tools: str = ""
     team_file: str = ""
+    ecs_arn: str = ""
 
     @classmethod
     def from_env(cls):
@@ -49,6 +52,7 @@ class AppConfig:
             os.getenv("MODEL_API", ""),
             os.getenv("TRACAUS_LOCAL_TOOLS", "").strip(),
             os.getenv("TRACAUS_TEAM_FILE", ""),
+            os.getenv("ECS_TOOL_ARN", ""),
         )
 
     def allowed_instances(self):
@@ -86,7 +90,8 @@ class AppConfig:
                 if self.local_tools:
                     pass  # The inventory and tools come from the local tools file, checked below.
                 elif self.runtime_target == "standalone":
-                    for arn in (self.logs_arn, self.metrics_arn):
+                    wants_ecs = any(i.startswith("ecs-") for i in ids)
+                    for arn in (self.logs_arn, self.metrics_arn, *([self.ecs_arn] if wants_ecs else [])):
                         if not re.fullmatch(
                             rf"arn:aws:lambda:{re.escape(self.region)}:{self.account_id}:function:[\w-]+:[1-9][0-9]*",
                             arn,

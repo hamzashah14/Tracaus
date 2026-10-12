@@ -2,7 +2,17 @@
 
 import json
 
-from infra.spec import digest, fallback_recipients, name, prefix, topic_arn
+from infra.spec import (
+    digest,
+    ecs_services,
+    ecs_targets,
+    event_rules,
+    fallback_recipients,
+    name,
+    prefix,
+    targets,
+    topic_arn,
+)
 from infra.templates import (
     add_function,
     att,
@@ -255,7 +265,7 @@ def foundation(spec, config):
                             "ArnEquals": {
                                 "aws:SourceArn": [
                                     f"arn:aws:events:{spec['monitor_region']}:{spec['account_id']}:rule/{name(spec, key)}"
-                                    for key in ("ec2-down", "incident-sweep")
+                                    for key in (*event_rules(spec), "incident-sweep")
                                 ]
                             },
                             "StringEquals": {"aws:SourceAccount": spec["account_id"]},
@@ -402,7 +412,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
         "EXPECTED_ACCOUNT_ID": spec["account_id"],
         "INCIDENT_TABLE": foundation_outputs["TableName"],
         "INCIDENT_RETENTION_DAYS": str(config["retention_days"]),
-        "ALLOWED_INSTANCE_IDS": ",".join(i["id"] for i in spec["instances"]),
+        "ALLOWED_INSTANCE_IDS": ",".join(targets(spec)),
     }
     if "observability" in spec:
         common.update(
@@ -420,6 +430,11 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                 **(
                     {"INCIDENT_COOLDOWN_MINUTES": str(config["incident_cooldown_minutes"])}
                     if "incident_cooldown_minutes" in config
+                    else {}
+                ),
+                **(
+                    {"ECS_TARGETS": json.dumps(ecs_targets(spec), sort_keys=True, separators=(",", ":"))}
+                    if ecs_services(spec)
                     else {}
                 ),
             },
@@ -576,12 +591,13 @@ def active_routing(
         t["Outputs"]["RuntimeConnection"] = {
             "Value": json.dumps(caller_environment(spec, config, owned_bindings))
         }
-    r["Ec2Down"]["Properties"]["Targets"][0].update(
-        {
-            "DeadLetterConfig": {"Arn": foundation_outputs["DeliveryDeadArn"]},
-            "RetryPolicy": {"MaximumEventAgeInSeconds": 600, "MaximumRetryAttempts": 5},
-        }
-    )
+    for logical in event_rules(spec).values():
+        r[logical]["Properties"]["Targets"][0].update(
+            {
+                "DeadLetterConfig": {"Arn": foundation_outputs["DeliveryDeadArn"]},
+                "RetryPolicy": {"MaximumEventAgeInSeconds": 600, "MaximumRetryAttempts": 5},
+            }
+        )
     r["UiRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"] += [
         statement(
             "dynamodb:GetItem",

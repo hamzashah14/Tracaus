@@ -1,4 +1,4 @@
-"""Bedrock Agent tool: one CloudWatch metric for one EC2 instance, around an incident."""
+"""Bedrock Agent tool: one CloudWatch metric for one EC2 instance or ECS service, around an incident."""
 
 import math
 import os
@@ -22,7 +22,7 @@ DEFAULT_WINDOW_MINUTES, MAX_WINDOW_MINUTES = 30, 180
 DEFAULT_HOURS_BACK, MAX_HOURS_BACK = 1, 72
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
-INSTANCE_ID_RE = re.compile(r"^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$")
+INSTANCE_ID_RE = re.compile(r"^(?:i-(?:[0-9a-f]{8}|[0-9a-f]{17})|ecs-[a-z0-9_]{1,24})$")
 METRIC_RE = re.compile(r"^[A-Za-z0-9_\-.%]{1,255}$")
 NAMESPACE_RE = re.compile(r"^[A-Za-z0-9_\-./]{1,255}$")
 PATH_RE = re.compile(r"^/[\w\-./]*$")
@@ -125,12 +125,18 @@ def fetch(params):
         "window_end": end.strftime(TIME_FMT),
     }
     if not datapoints:
-        hint = (
-            "CWAgent metrics need the agent running on this instance with append_dimensions.InstanceId "
-            "(and aggregation_dimensions for disk metrics)."
-            if namespace == "CWAgent"
-            else "The instance may have been stopped during this window."
-        )
+        if namespace == "CWAgent":
+            hint = (
+                "CWAgent metrics need the agent running on this instance with append_dimensions.InstanceId "
+                "(and aggregation_dimensions for disk metrics)."
+            )
+        elif instance_id.startswith("ecs-"):
+            hint = (
+                "ECS publishes service metrics only while tasks run; Container Insights metrics need it "
+                "turned on for the cluster, and ALB metrics need traffic."
+            )
+        else:
+            hint = "The instance may have been stopped during this window."
         return {"status": "no_data", **base, "message": f"No datapoints in this window. {hint}"}
 
     values = [dp[statistic] for dp in datapoints]

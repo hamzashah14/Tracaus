@@ -6,7 +6,16 @@ import zipfile
 from datetime import datetime, timezone
 
 from infra import templates
-from infra.spec import ROOT, digest, existing_log_groups, log_groups, metric_catalog
+from infra.spec import (
+    ROOT,
+    canary_tools,
+    digest,
+    ecs_targets,
+    existing_log_groups,
+    log_groups,
+    metric_catalog,
+    tool_functions,
+)
 from infra.verify import VerificationError
 
 SEALED_POLICY = {"Statement": [{"Effect": "Deny", "Action": "Update:*", "Principal": "*", "Resource": "*"}]}
@@ -19,8 +28,8 @@ def write_json(path, value):
 
 def checked_build(directory, spec):
     manifest = json.loads((directory / "manifest.json").read_text())
-    if set(manifest["functions"]) != {"fetch_logs", "fetch_metrics"}:
-        raise VerificationError("Release requires both read-only tool artifacts")
+    if set(manifest["functions"]) != set(tool_functions(spec)):
+        raise VerificationError("Release requires every read-only tool artifact the deployment needs")
     if manifest["python"] != "3.12" or manifest["architecture"] != "x86_64":
         raise VerificationError("Unsupported build runtime/architecture")
     lock_hash = hashlib.sha256((ROOT / "requirements/lambda.lock").read_bytes()).hexdigest()
@@ -33,6 +42,7 @@ def checked_build(directory, spec):
             "schemas/fetch_metrics.json",
             "tracaus_agentcore.py",
             "lambda_function.py",
+            *(["schemas/fetch_ecs.json", "config/ecs-targets.json"] if ecs_targets(spec) else []),
         }
         if not required <= set(item["source_files"]):
             raise VerificationError("Build manifest omits required current source")
@@ -53,6 +63,11 @@ def checked_build(directory, spec):
                 existing and json.loads(archive.read("config/existing-log-groups.json")) != existing
             ):
                 raise VerificationError("Packaged existing log groups differ from deployment inventory")
+            ecs = ecs_targets(spec)
+            if ("config/ecs-targets.json" in archive.namelist()) != bool(ecs) or (
+                ecs and json.loads(archive.read("config/ecs-targets.json")) != ecs
+            ):
+                raise VerificationError("Packaged ECS targets differ from deployment inventory")
             for filename, expected in item["source_files"].items():
                 if hashlib.sha256(archive.read(filename)).hexdigest() != expected:
                     raise VerificationError("Packaged source differs from build manifest")
@@ -104,6 +119,6 @@ def require_receipt(bundle, record):
         record.get("bundle_hash") != bundle["review_hash"]
         or record.get("status") != "PASS"
         or not 0 <= age <= 3600
-        or set(record.get("canary_tools", [])) != {"fetch_logs", "fetch_metrics"}
+        or not canary_tools(bundle["spec"]) <= set(record.get("canary_tools", []))
     ):
         raise VerificationError("Promotion requires a passing, recent canary receipt for this exact bundle")

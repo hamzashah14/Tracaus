@@ -1,0 +1,52 @@
+{
+  "project": "tracaus",
+  "environment": "staging",
+  "account_id": "123456789012",
+  "monitor_region": "eu-central-1",
+  "bedrock_region": "eu-central-1",
+  "release_id": "example001",
+  "model_id": "example.model-v1",
+  "model_arns": [
+    "arn:aws:bedrock:eu-central-1::foundation-model/example.model-v1"
+  ],
+  "executor_mode": "qualified",
+  "notification_email": "operator@example.invalid",
+  "reserved_concurrency": null,
+  "maintenance_mode": false,
+  "log_retention_days": 30,
+  "ui_principal_arn": "arn:aws:iam::123456789012:role/customer-ui",
+  "ci_principal_arn": "arn:aws:iam::123456789012:role/customer-ci",
+  "deployment_role_arn": "arn:aws:iam::123456789012:role/customer-cfn-deployment",
+  "instances": [],
+  "ecs_services": [
+    {
+      "id": "ecs-orders",
+      "cluster": "prod-cluster",
+      "service": "orders-api",
+      "load_balancer": {
+        "load_balancer_arn": "arn:aws:elasticloadbalancing:eu-central-1:123456789012:loadbalancer/app/orders-alb/50dc6c495c0c9188",
+        "target_group_arn": "arn:aws:elasticloadbalancing:eu-central-1:123456789012:targetgroup/orders/73e2d6bc24d8a067"
+      },
+      "existing_log_groups": [
+        {
+          "name": "/ecs/orders-api"
+        }
+      ],
+      "resource_alarms": true,
+      "container_insights": false
+    },
+    {
+      "id": "ecs-worker",
+      "cluster": "prod-cluster",
+      "service": "worker",
+      "load_balancer": null,
+      "existing_log_groups": [
+        {
+          "name": "/ecs/worker"
+        }
+      ]
+    }
+  ],
+  "log_segment": "",
+  "reference_only": true
+}

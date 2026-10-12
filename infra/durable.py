@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 from infra import durable_templates, observation_templates, owned_runtime, release, templates
-from infra.spec import ROOT, digest, load, prefix
+from infra.spec import ROOT, digest, load, prefix, tool_functions
 from infra.spec import name as resource_name
 from infra.verify import VerificationError
 from scripts.build_lambdas import PIPELINE_FUNCTIONS
@@ -136,7 +136,7 @@ def render(
         "durable-foundation": durable_templates.foundation(spec, config),
     }
     if "tool_artifacts" in bindings:
-        if not tool_build or set(bindings["tool_artifacts"]) != {"fetch_logs", "fetch_metrics"}:
+        if not tool_build or set(bindings["tool_artifacts"]) != set(tool_functions(spec)):
             raise VerificationError("Verified inventory-bound tool artifacts are required")
         for function, artifact in bindings["tool_artifacts"].items():
             expected_hash = tool_build["functions"][function]["sha256"]

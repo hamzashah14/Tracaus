@@ -7,7 +7,7 @@ roles can only touch resources whose names start with it. The resource strings m
 permission screen in `infra.deployment_preflight`, so `check` can confirm the result.
 """
 
-from infra.spec import prefix
+from infra.spec import ecs_services, prefix
 from infra.templates import ref
 
 CLOUDFORMATION = "cloudformation.amazonaws.com"
@@ -107,6 +107,15 @@ def operator_policy(spec):
                 "lambda:ListEventSourceMappings",
                 "bedrock:GetFoundationModel",
                 "bedrock:GetInferenceProfile",
+                *(
+                    [
+                        "ecs:DescribeServices",
+                        "ecs:DescribeTaskDefinition",
+                        "elasticloadbalancing:DescribeTargetGroups",
+                    ]
+                    if ecs_services(spec)
+                    else []
+                ),
             ],
             ["*"],
         ),

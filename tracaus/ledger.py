@@ -91,13 +91,14 @@ class Ledger:
                     event["related_incident_id"] = recovery
                 else:
                     recovery = None
-        # One open incident per instance: while it is inside its cooldown, a later alarm is stored and
-        # counted on that incident but starts no investigation and sends no email.
+        # One open incident per target: while it is inside its cooldown, a later alarm (or a later ECS task
+        # stop: a crash loop repeats) is stored and counted on that incident but starts no investigation and
+        # sends no email. An EC2 stop is rare and always gets its own incident.
         marker_pk, parent, new_marker = f"COOLDOWN#{event['instance_id']}", None, False
         if cooldown_minutes and event["actionable"] and event.get("investigate", True):
             marker = self.get(marker_pk)
             if marker and int(marker["until_epoch"]) > now_epoch:
-                parent = marker["incident_id"] if event["kind"] == "alarm" else None
+                parent = marker["incident_id"] if event["kind"] in {"alarm", "ecs"} else None
             else:
                 new_marker = True
         event_row = {

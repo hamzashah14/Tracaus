@@ -1,0 +1,461 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ECS Service State Fetcher",
+    "version": "1.0.0",
+    "description": "Reads the state of one ECS service"
+  },
+  "paths": {
+    "/fetch_ecs_service_state": {
+      "get": {
+        "summary": "Read one ECS service's deployments, events, stopped tasks and ALB target health",
+        "description": "Read the state of an authorized ECS service around time_string: its deployments and rollout state, recent service event messages, tasks that stopped in the window with their stop code, stopped reason and container exit codes, a summary of the current task definition (no environment values or secrets) and, when an ALB is in front, the target group's health with the reason for each unhealthy target. Use it to learn WHY tasks stopped or why a deployment is failing. A task stopped by the scheduler for a deployment or scale-in is routine, not a failure. No-data differs from access failure.",
+        "operationId": "fetch_ecs_service_state",
+        "parameters": [
+          {
+            "name": "instance_id",
+            "in": "query",
+            "required": true,
+            "description": "ECS service ID such as ecs-orders. Only ECS services are read here.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "time_string",
+            "in": "query",
+            "required": false,
+            "description": "Incident timestamp: ISO-8601 with UTC/offset, or YYYY-MM-DD HH:MM:SS interpreted as UTC.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "window_minutes",
+            "in": "query",
+            "required": false,
+            "description": "With time_string: minutes before and after the incident (1-180).",
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful, empty or explicitly partial evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "no_data",
+                        "partial"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "complete": {
+                      "type": "boolean"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "instance_id": {
+                      "type": "string"
+                    },
+                    "ecs_service": {
+                      "type": "string"
+                    },
+                    "window_start": {
+                      "type": "string"
+                    },
+                    "window_end": {
+                      "type": "string"
+                    },
+                    "incident_time": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string"
+                        },
+                        "desired_count": {
+                          "type": "integer"
+                        },
+                        "running_count": {
+                          "type": "integer"
+                        },
+                        "pending_count": {
+                          "type": "integer"
+                        },
+                        "task_definition": {
+                          "type": "string"
+                        },
+                        "deployments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "rollout_state": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "rollout_state_reason": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "task_definition": {
+                                "type": "string"
+                              },
+                              "created_at": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "desired_count": {
+                                "type": "integer"
+                              },
+                              "running_count": {
+                                "type": "integer"
+                              },
+                              "pending_count": {
+                                "type": "integer"
+                              },
+                              "failed_tasks": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "rollout_state",
+                              "rollout_state_reason",
+                              "task_definition",
+                              "created_at",
+                              "desired_count",
+                              "running_count",
+                              "pending_count",
+                              "failed_tasks"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "desired_count",
+                        "running_count",
+                        "pending_count",
+                        "task_definition",
+                        "deployments"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "service_events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "message": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "stopped_tasks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "task": {
+                            "type": "string"
+                          },
+                          "stop_code": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "stopped_reason": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "stopped_at": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "task_definition": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "containers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "exit_code": {
+                                  "type": "integer",
+                                  "nullable": true
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "nullable": true
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "exit_code",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "task",
+                          "stop_code",
+                          "stopped_reason",
+                          "stopped_at",
+                          "task_definition",
+                          "containers"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "task_definition": {
+                      "type": "object",
+                      "properties": {
+                        "family": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "cpu": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "memory": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "containers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "image": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "cpu": {
+                                "type": "integer"
+                              },
+                              "memory": {
+                                "type": "integer",
+                                "nullable": true
+                              },
+                              "memory_reservation": {
+                                "type": "integer",
+                                "nullable": true
+                              },
+                              "essential": {
+                                "type": "boolean"
+                              },
+                              "health_check": {
+                                "type": "boolean"
+                              },
+                              "log_driver": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "image",
+                              "cpu",
+                              "memory",
+                              "memory_reservation",
+                              "essential",
+                              "health_check",
+                              "log_driver"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "family",
+                        "revision",
+                        "cpu",
+                        "memory",
+                        "containers"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "load_balancer": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unavailable"
+                          ]
+                        },
+                        "counts": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "targets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "description": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "port": {
+                                "type": "integer",
+                                "nullable": true
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "reason",
+                              "description",
+                              "port"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "counts",
+                        "targets"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "complete",
+                    "truncated",
+                    "instance_id",
+                    "ecs_service",
+                    "window_start",
+                    "window_end"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unauthorized input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "error"
+                      ]
+                    },
+                    "error_code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "error_code",
+                    "request_id",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream access, query or response-budget failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "error"
+                      ]
+                    },
+                    "error_code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "error_code",
+                    "request_id",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

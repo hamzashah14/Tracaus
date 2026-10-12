@@ -33,10 +33,13 @@ def tools(policy, reserve, instance=None, anchor=None, allowed=None, access_guar
             anchor,
             access_guard,
         )
+    arns = {"fetch_logs": required("LOGS_TOOL_ARN"), "fetch_metrics": required("METRICS_TOOL_ARN")}
+    if os.getenv("ECS_TOOL_ARN") and (instance is None or instance.startswith("ecs-")):
+        arns["fetch_ecs"] = os.environ["ECS_TOOL_ARN"]  # an EC2 incident never sees the ECS tool
     return LambdaTools(
         required("BEDROCK_REGION"),
         required("EXPECTED_ACCOUNT_ID"),
-        {"fetch_logs": required("LOGS_TOOL_ARN"), "fetch_metrics": required("METRICS_TOOL_ARN")},
+        arns,
         {instance}
         if instance
         else (allowed if allowed is not None else set(required("ALLOWED_INSTANCE_IDS").split(","))),
@@ -116,9 +119,20 @@ def execute(payload, *, store=None, checkpoint=None, local=None, allowed=None, p
 
         executor = tools(policy, reserve, event["instance_id"], event["occurred_at"])
         checkpoint = checkpoint or checkpoint_writer(store, claim)
+        ecs = event["instance_id"].startswith("ecs-")
         prompt = (
-            f"Investigate instance {event['instance_id']} near {event['occurred_at']}. "
-            f"Trigger: {event['kind']} {event['state']}. Use logs and metrics. "
+            (
+                f"Investigate ECS service {event['instance_id']} near {event['occurred_at']}. "
+                f"Trigger: {event['kind']} {event['state']}"
+                + (f" ({event['stop_code']})" if event.get("stop_code") else "")
+                + ". Use fetch_ecs for deployments, stopped tasks and load balancer health, plus metrics and logs. "
+            )
+            if ecs
+            else (
+                f"Investigate instance {event['instance_id']} near {event['occurred_at']}. "
+                f"Trigger: {event['kind']} {event['state']}. Use logs and metrics. "
+            )
+        ) + (
             f"Window allowance: {policy.window_minutes} minutes per side. "
             "Return evidence, uncertainty, remediation and follow-up."
         )
@@ -136,6 +150,7 @@ def execute(payload, *, store=None, checkpoint=None, local=None, allowed=None, p
                 record_usage=lambda input_tokens, output_tokens: store.record_usage(
                     claim, input_tokens, output_tokens
                 ),
+                required_evidence={"fetch_ecs", "fetch_metrics"} if ecs else {"fetch_logs", "fetch_metrics"},
             )
     elif mode == "chat":
         if set(payload) != {"version", "release", "mode", "prompt", "history"}:

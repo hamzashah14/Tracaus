@@ -538,6 +538,148 @@
         "statistic": "Minimum",
         "period_seconds": 60
       }
+    },
+    "ecs-stopped-crash": {
+      "id": "ev_0e9c6405ff00a53b4e41c084",
+      "tool": "fetch_ecs",
+      "source": "prod-cluster/orders-api",
+      "instance_id": "ecs-orders",
+      "window_start": "2026-10-01T10:00:00Z",
+      "window_end": "2026-10-01T10:15:00Z",
+      "result": {
+        "instance_id": "ecs-orders",
+        "ecs_service": "prod-cluster/orders-api",
+        "window_start": "2026-10-01T10:00:00Z",
+        "window_end": "2026-10-01T10:15:00Z",
+        "complete": true,
+        "truncated": false,
+        "status": "ok",
+        "service": {
+          "status": "ACTIVE",
+          "desired_count": 3,
+          "running_count": 1,
+          "pending_count": 0,
+          "task_definition": "orders:12",
+          "deployments": []
+        },
+        "service_events": [],
+        "stopped_tasks": [
+          {
+            "task": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "stop_code": "EssentialContainerExited",
+            "stopped_reason": "Essential container in task exited",
+            "stopped_at": "2026-10-01T10:05:00Z",
+            "task_definition": "orders:12",
+            "containers": [
+              {
+                "name": "web",
+                "exit_code": 137,
+                "reason": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "ecs-stopped-routine": {
+      "id": "ev_fbdc1facb2ef24e46b6c532a",
+      "tool": "fetch_ecs",
+      "source": "prod-cluster/orders-api",
+      "instance_id": "ecs-orders",
+      "window_start": "2026-10-01T10:00:00Z",
+      "window_end": "2026-10-01T10:15:00Z",
+      "result": {
+        "instance_id": "ecs-orders",
+        "ecs_service": "prod-cluster/orders-api",
+        "window_start": "2026-10-01T10:00:00Z",
+        "window_end": "2026-10-01T10:15:00Z",
+        "complete": true,
+        "truncated": false,
+        "status": "ok",
+        "service": {
+          "status": "ACTIVE",
+          "desired_count": 3,
+          "running_count": 1,
+          "pending_count": 0,
+          "task_definition": "orders:12",
+          "deployments": []
+        },
+        "service_events": [],
+        "stopped_tasks": [
+          {
+            "task": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "stop_code": "ServiceSchedulerInitiated",
+            "stopped_reason": "Scaling activity initiated by (deployment ecs-svc/1)",
+            "stopped_at": "2026-10-01T10:05:00Z",
+            "task_definition": "orders:12",
+            "containers": [
+              {
+                "name": "web",
+                "exit_code": null,
+                "reason": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "ecs-memory-high": {
+      "id": "ev_3e51402be9cf65849d813ba3",
+      "tool": "fetch_metrics",
+      "source": {
+        "namespace": "AWS/ECS",
+        "metric_name": "MemoryUtilization",
+        "statistic": "Average",
+        "instance_id": "ecs-orders",
+        "metric_id": "builtin",
+        "dimensions": [
+          {
+            "Name": "ClusterName",
+            "Value": "prod-cluster"
+          },
+          {
+            "Name": "ServiceName",
+            "Value": "orders-api"
+          }
+        ]
+      },
+      "instance_id": "ecs-orders",
+      "window_start": "2026-10-01T10:00:00Z",
+      "window_end": "2026-10-01T10:15:00Z",
+      "result": {
+        "status": "ok",
+        "complete": true,
+        "instance_id": "ecs-orders",
+        "window_start": "2026-10-01T10:00:00Z",
+        "window_end": "2026-10-01T10:15:00Z",
+        "descriptor": {
+          "namespace": "AWS/ECS",
+          "metric_name": "MemoryUtilization",
+          "statistic": "Average",
+          "instance_id": "ecs-orders",
+          "metric_id": "builtin",
+          "dimensions": [
+            {
+              "Name": "ClusterName",
+              "Value": "prod-cluster"
+            },
+            {
+              "Name": "ServiceName",
+              "Value": "orders-api"
+            }
+          ]
+        },
+        "datapoints": [
+          {
+            "timestamp": "2026-10-01T10:05:00Z",
+            "value": 96
+          }
+        ],
+        "metric": "MemoryUtilization",
+        "namespace": "AWS/ECS",
+        "statistic": "Average",
+        "period_seconds": 60
+      }
     }
   },
   "cases": [
@@ -1238,6 +1380,277 @@
               "ev_60acc85746cc927fa58c8cd5",
               "ev_dd2678005f3364d336298d34",
               "ev_23a2a4268ba5e89fa6b7dfab"
+            ]
+          }
+        ],
+        "limitations": [
+          "Synthetic fixture; collection coverage does not prove causation."
+        ],
+        "recommendations": [
+          "Operator review: confirm evidence before applying any fix."
+        ]
+      }
+    },
+    {
+      "id": "ecs-task-failure",
+      "expected": "VALID",
+      "expected_kind": "task_failure",
+      "prompt": "Investigate ecs-orders near 2026-10-01T10:00:00Z. ",
+      "catalog": [
+        "ecs-stopped-crash"
+      ],
+      "candidate": {
+        "version": 1,
+        "findings": [
+          {
+            "kind": "task_failure",
+            "statement": "Synthetic evidence supports a qualified symptom, not a confirmed internal cause.",
+            "evidence_ids": [
+              "ev_0e9c6405ff00a53b4e41c084"
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "evidence_id": "ev_0e9c6405ff00a53b4e41c084",
+            "path": "/stopped_tasks/0/stop_code",
+            "quote": "EssentialContainerExited"
+          },
+          {
+            "evidence_id": "ev_0e9c6405ff00a53b4e41c084",
+            "path": "/stopped_tasks/0/containers/0/exit_code",
+            "quote": "137"
+          }
+        ],
+        "hypotheses": [
+          {
+            "statement": "An ECS failure is one possibility; verify alternatives.",
+            "confidence": "low",
+            "evidence_ids": [
+              "ev_0e9c6405ff00a53b4e41c084"
+            ]
+          }
+        ],
+        "limitations": [
+          "Synthetic fixture; collection coverage does not prove causation."
+        ],
+        "recommendations": [
+          "Operator review: confirm evidence before applying any fix."
+        ]
+      }
+    },
+    {
+      "id": "ecs-routine-stop-is-not-a-failure",
+      "expected": "REJECTED",
+      "expected_kind": "task_failure",
+      "prompt": "Investigate ecs-orders near 2026-10-01T10:00:00Z. ",
+      "catalog": [
+        "ecs-stopped-routine"
+      ],
+      "candidate": {
+        "version": 1,
+        "findings": [
+          {
+            "kind": "task_failure",
+            "statement": "Synthetic evidence supports a qualified symptom, not a confirmed internal cause.",
+            "evidence_ids": [
+              "ev_fbdc1facb2ef24e46b6c532a"
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "evidence_id": "ev_fbdc1facb2ef24e46b6c532a",
+            "path": "/stopped_tasks/0/stop_code",
+            "quote": "ServiceSchedulerInitiated"
+          }
+        ],
+        "hypotheses": [
+          {
+            "statement": "An ECS failure is one possibility; verify alternatives.",
+            "confidence": "low",
+            "evidence_ids": [
+              "ev_fbdc1facb2ef24e46b6c532a"
+            ]
+          }
+        ],
+        "limitations": [
+          "Synthetic fixture; collection coverage does not prove causation."
+        ],
+        "recommendations": [
+          "Operator review: confirm evidence before applying any fix."
+        ]
+      }
+    },
+    {
+      "id": "ecs-task-failure-needs-service-state",
+      "expected": "REJECTED",
+      "expected_kind": "task_failure",
+      "prompt": "Investigate ecs-orders near 2026-10-01T10:00:00Z. ",
+      "catalog": [
+        "ecs-memory-high"
+      ],
+      "candidate": {
+        "version": 1,
+        "findings": [
+          {
+            "kind": "task_failure",
+            "statement": "Synthetic evidence supports a qualified symptom, not a confirmed internal cause.",
+            "evidence_ids": [
+              "ev_3e51402be9cf65849d813ba3"
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "evidence_id": "ev_3e51402be9cf65849d813ba3",
+            "path": "/datapoints/0/value",
+            "quote": "96"
+          }
+        ],
+        "hypotheses": [
+          {
+            "statement": "An ECS failure is one possibility; verify alternatives.",
+            "confidence": "low",
+            "evidence_ids": [
+              "ev_3e51402be9cf65849d813ba3"
+            ]
+          }
+        ],
+        "limitations": [
+          "Synthetic fixture; collection coverage does not prove causation."
+        ],
+        "recommendations": [
+          "Operator review: confirm evidence before applying any fix."
+        ]
+      }
+    },
+    {
+      "id": "ecs-task-failure-must-quote-the-stopped-task",
+      "expected": "REJECTED",
+      "expected_kind": "task_failure",
+      "prompt": "Investigate ecs-orders near 2026-10-01T10:00:00Z. ",
+      "catalog": [
+        "ecs-stopped-crash"
+      ],
+      "candidate": {
+        "version": 1,
+        "findings": [
+          {
+            "kind": "task_failure",
+            "statement": "Synthetic evidence supports a qualified symptom, not a confirmed internal cause.",
+            "evidence_ids": [
+              "ev_0e9c6405ff00a53b4e41c084"
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "evidence_id": "ev_0e9c6405ff00a53b4e41c084",
+            "path": "/service/desired_count",
+            "quote": "3"
+          }
+        ],
+        "hypotheses": [
+          {
+            "statement": "An ECS failure is one possibility; verify alternatives.",
+            "confidence": "low",
+            "evidence_ids": [
+              "ev_0e9c6405ff00a53b4e41c084"
+            ]
+          }
+        ],
+        "limitations": [
+          "Synthetic fixture; collection coverage does not prove causation."
+        ],
+        "recommendations": [
+          "Operator review: confirm evidence before applying any fix."
+        ]
+      }
+    },
+    {
+      "id": "ecs-resource-pressure",
+      "expected": "VALID",
+      "expected_kind": "resource_pressure",
+      "prompt": "Investigate ecs-orders near 2026-10-01T10:00:00Z. ",
+      "catalog": [
+        "ecs-memory-high",
+        "ecs-stopped-crash"
+      ],
+      "candidate": {
+        "version": 1,
+        "findings": [
+          {
+            "kind": "resource_pressure",
+            "statement": "Synthetic evidence supports a qualified symptom, not a confirmed internal cause.",
+            "evidence_ids": [
+              "ev_3e51402be9cf65849d813ba3",
+              "ev_0e9c6405ff00a53b4e41c084"
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "evidence_id": "ev_3e51402be9cf65849d813ba3",
+            "path": "/datapoints/0/value",
+            "quote": "96"
+          },
+          {
+            "evidence_id": "ev_0e9c6405ff00a53b4e41c084",
+            "path": "/service/running_count",
+            "quote": "1"
+          }
+        ],
+        "hypotheses": [
+          {
+            "statement": "An ECS failure is one possibility; verify alternatives.",
+            "confidence": "low",
+            "evidence_ids": [
+              "ev_3e51402be9cf65849d813ba3",
+              "ev_0e9c6405ff00a53b4e41c084"
+            ]
+          }
+        ],
+        "limitations": [
+          "Synthetic fixture; collection coverage does not prove causation."
+        ],
+        "recommendations": [
+          "Operator review: confirm evidence before applying any fix."
+        ]
+      }
+    },
+    {
+      "id": "ecs-has-no-health-probe-hang",
+      "expected": "REJECTED",
+      "expected_kind": "hang_correlated",
+      "prompt": "Investigate ecs-orders near 2026-10-01T10:00:00Z. ",
+      "catalog": [
+        "ecs-stopped-crash"
+      ],
+      "candidate": {
+        "version": 1,
+        "findings": [
+          {
+            "kind": "hang_correlated",
+            "statement": "Synthetic evidence supports a qualified symptom, not a confirmed internal cause.",
+            "evidence_ids": [
+              "ev_0e9c6405ff00a53b4e41c084"
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "evidence_id": "ev_0e9c6405ff00a53b4e41c084",
+            "path": "/stopped_tasks/0/stop_code",
+            "quote": "EssentialContainerExited"
+          }
+        ],
+        "hypotheses": [
+          {
+            "statement": "An ECS failure is one possibility; verify alternatives.",
+            "confidence": "low",
+            "evidence_ids": [
+              "ev_0e9c6405ff00a53b4e41c084"
             ]
           }
         ],

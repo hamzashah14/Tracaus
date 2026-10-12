@@ -7,10 +7,82 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
+MAX_TARGETS = 10  # EC2 instances and ECS services together
 
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def ecs_services(spec):
+    return spec.get("ecs_services", [])
+
+
+def targets(spec):
+    """Every target ID the deployment may investigate: EC2 instances, then ECS services."""
+    return [item["id"] for item in spec["instances"]] + [item["id"] for item in ecs_services(spec)]
+
+
+def tool_functions(spec):
+    """The read-only tool Lambdas this deployment needs. `fetch_ecs` exists only with ECS services."""
+    return ("fetch_logs", "fetch_metrics") + (("fetch_ecs",) if ecs_services(spec) else ())
+
+
+def canary_target(spec):
+    """The target the paid canary investigates: the first EC2 instance, else the first ECS service."""
+    return spec["instances"][0]["id"] if spec["instances"] else ecs_services(spec)[0]["id"]
+
+
+def canary_tools(spec):
+    """Tools the canary must prove. EC2 targets need logs and metrics; an ECS-only deployment, state and metrics."""
+    return {"fetch_logs", "fetch_metrics"} if spec["instances"] else {"fetch_ecs", "fetch_metrics"}
+
+
+def event_rules(spec):
+    """{rule name suffix: template key} for the EventBridge rules that exist: EC2 stops, ECS task stops."""
+    rules = {}
+    if spec["instances"]:
+        rules["ec2-down"] = "Ec2Down"
+    if ecs_services(spec):
+        rules["ecs-down"] = "EcsDown"
+    return rules
+
+
+TOOL_LOGICAL = {"fetch_logs": "Logs", "fetch_metrics": "Metrics", "fetch_ecs": "Ecs"}
+
+
+def tool_bindings(spec):
+    """The stack output names that carry each tool's pinned version ARN."""
+    return [TOOL_LOGICAL[function] + "VersionArn" for function in tool_functions(spec)]
+
+
+def alb_dimensions(load_balancer):
+    """CloudWatch dimension values for an ALB and its target group, taken from their ARNs."""
+    return {
+        "LoadBalancer": load_balancer["load_balancer_arn"].split(":loadbalancer/", 1)[1],
+        "TargetGroup": load_balancer["target_group_arn"].rsplit(":", 1)[1],
+    }
+
+
+def ecs_targets(spec):
+    """{target ID: where its cluster, service and optional ALB are}; packaged into the tools and the ingress."""
+    return {
+        service["id"]: {
+            "cluster": service["cluster"],
+            "service": service["service"],
+            "cluster_arn": f"arn:aws:ecs:{spec['monitor_region']}:{spec['account_id']}:cluster/{service['cluster']}",
+            "container_insights": service.get("container_insights", False),
+            "load_balancer": (
+                None
+                if service["load_balancer"] is None
+                else {
+                    **alb_dimensions(service["load_balancer"]),
+                    "target_group_arn": service["load_balancer"]["target_group_arn"],
+                }
+            ),
+        }
+        for service in ecs_services(spec)
+    }
 
 
 def load(path):
@@ -21,8 +93,15 @@ def load(path):
         # No submitted values (which may contain secrets) in diagnostics.
         raise ValueError(f"Invalid deployment field: {'.'.join(map(str, errors[0].path)) or 'root'}")
     ids = [item["id"] for item in value["instances"]]
-    if len(set(ids)) != len(ids):
-        raise ValueError("Duplicate instance IDs")
+    everything = targets(value)
+    if len(set(everything)) != len(everything):
+        raise ValueError("Duplicate target IDs")
+    if not everything:
+        raise ValueError("List at least one EC2 instance or ECS service")
+    if any(item["nginx_alarm"] for item in value["instances"]) and "nginx_filters" not in value:
+        raise ValueError("nginx_filters is required when an instance has nginx_alarm")
+    if len(everything) > MAX_TARGETS:
+        raise ValueError(f"At most {MAX_TARGETS} targets (EC2 instances and ECS services together)")
     if value["reserved_concurrency"] == 0 and not value["maintenance_mode"]:
         raise ValueError("Zero concurrency requires maintenance mode")
     owned, modes = log_prefix(value) + "/", {}
@@ -39,6 +118,26 @@ def load(path):
             )
         for group in groups:
             modes.setdefault(group["name"], []).append(group.get("streams", "instance"))
+    services_seen = set()
+    for service in ecs_services(value):
+        where = (service["cluster"], service["service"])
+        if where in services_seen:
+            raise ValueError("Each ECS cluster and service may be listed once")
+        services_seen.add(where)
+        balancer = service["load_balancer"]
+        if balancer and any(
+            arn.split(":")[3:5] != [value["monitor_region"], value["account_id"]] for arn in balancer.values()
+        ):
+            raise ValueError("load_balancer ARNs must belong to the deployment's account and monitor_region")
+        names = [group["name"] for group in service.get("existing_log_groups", [])]
+        if len(set(names)) != len(names) or any(
+            name.startswith(owned) or name.endswith("/") for name in names
+        ):
+            raise ValueError(
+                "Invalid existing_log_groups: names must be unique and not one of Tracaus's own groups"
+            )
+        for name in names:
+            modes.setdefault(name, []).append("all")
     if any("all" in seen and len(seen) > 1 for seen in modes.values()):
         raise ValueError("An existing log group read with streams=all can belong to one instance only")
     account = value["account_id"]
@@ -223,6 +322,94 @@ def alarm_descriptors(spec):
                     "alarm_name": name(spec, f"{iid}-{suffix}"),
                 }
             )
+    for service in ecs_services(spec):
+        sid = service["id"]
+        cluster = {"ClusterName": service["cluster"], "ServiceName": service["service"]}
+        definitions = []
+        if service.get("resource_alarms", True):
+            definitions += [
+                (
+                    "cpu",
+                    "AWS/ECS",
+                    "CPUUtilization",
+                    "Average",
+                    cluster,
+                    90,
+                    "GreaterThanThreshold",
+                    300,
+                    "missing",
+                ),
+                (
+                    "memory",
+                    "AWS/ECS",
+                    "MemoryUtilization",
+                    "Average",
+                    cluster,
+                    90,
+                    "GreaterThanThreshold",
+                    300,
+                    "missing",
+                ),
+            ]
+        if service.get("container_insights"):
+            definitions.append(
+                (
+                    "running",
+                    "ECS/ContainerInsights",
+                    "RunningTaskCount",
+                    "Minimum",
+                    cluster,
+                    1,
+                    "LessThanThreshold",
+                    60,
+                    "missing",
+                )
+            )
+        if service["load_balancer"]:
+            balancer = alb_dimensions(service["load_balancer"])
+            definitions += [
+                (
+                    "alb5xx",
+                    "AWS/ApplicationELB",
+                    "HTTPCode_Target_5XX_Count",
+                    "Sum",
+                    balancer,
+                    5,
+                    "GreaterThanOrEqualToThreshold",
+                    60,
+                    "notBreaching",
+                ),
+                (
+                    "unhealthy",
+                    "AWS/ApplicationELB",
+                    "UnHealthyHostCount",
+                    "Maximum",
+                    balancer,
+                    0,
+                    "GreaterThanThreshold",
+                    60,
+                    "notBreaching",
+                ),
+            ]
+        for suffix, namespace, metric, statistic, dims, threshold, comparison, period, missing in definitions:
+            output.append(
+                {
+                    "id": f"{sid}-{suffix}",
+                    "instance_id": sid,
+                    "namespace": namespace,
+                    "metric_name": metric,
+                    "statistic": statistic,
+                    "dimensions": dims,
+                    "threshold": threshold,
+                    "comparison": comparison,
+                    "period": period,
+                    "missing_data": missing,
+                    "owner": None,
+                    # The ALB reports a 5xx count only when it is above zero, so a healthy service has no such metric.
+                    "sparse": suffix == "alb5xx",
+                    "alarm_name": name(spec, f"{sid}-{suffix}"),
+                }
+            )
     if "observability" in spec:
         settings = spec["observability"]
         for service in settings["services"]:
@@ -269,12 +456,21 @@ def log_groups(spec):
 
 
 def existing_log_groups(spec):
-    """{instance ID: {group: "instance" or "all"}} for groups Tracaus reads and never creates."""
-    return {
+    """{target ID: {group: "instance" or "all"}} for groups Tracaus reads and never creates."""
+    found = {
         item["id"]: {g["name"]: g.get("streams", "instance") for g in item["existing_log_groups"]}
         for item in spec["instances"]
         if item.get("existing_log_groups")
     }
+    # An awslogs stream is named prefix/container/task, never after the target, so ECS groups are read whole.
+    found.update(
+        {
+            item["id"]: {g["name"]: "all" for g in item["existing_log_groups"]}
+            for item in ecs_services(spec)
+            if item.get("existing_log_groups")
+        }
+    )
+    return found
 
 
 def readable_log_groups(spec):

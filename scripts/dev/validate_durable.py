@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from infra import durable_templates, owned_runtime, templates  # noqa: E402
-from infra.spec import load, name, prefix  # noqa: E402
+from infra.spec import TOOL_LOGICAL, load, name, prefix, tool_functions  # noqa: E402
 
 
 def examples(spec, config, *, include_bindings=False):
@@ -43,9 +43,9 @@ def examples(spec, config, *, include_bindings=False):
             f"arn:aws:lambda:{region}:{account}:function:{name(spec, function.replace('_', '-'), True)}:1"
         )
     tools = {
-        logical
-        + "VersionArn": f"arn:aws:lambda:{spec['bedrock_region']}:{account}:function:{name(spec, function, True)}:1"
-        for logical, function in (("Logs", "fetch-logs"), ("Metrics", "fetch-metrics"))
+        TOOL_LOGICAL[function]
+        + "VersionArn": f"arn:aws:lambda:{spec['bedrock_region']}:{account}:function:{name(spec, function.replace('_', '-'), True)}:1"
+        for function in tool_functions(spec)
     }
     bindings = {"tools": tools, "foundation": foundation}
     if owned_runtime.model_api(spec):
@@ -55,7 +55,7 @@ def examples(spec, config, *, include_bindings=False):
         }
     tool_artifacts = {
         n: {**artifacts["incident_ingress"], "bucket": templates.bucket_name(spec, "tools")}
-        for n in ("fetch_logs", "fetch_metrics")
+        for n in tool_functions(spec)
     }
     result = {
         "durable-foundation": durable_templates.foundation(spec, config),
@@ -99,28 +99,29 @@ def examples(spec, config, *, include_bindings=False):
 
 
 def main():
-    spec = load(ROOT / "examples/deployment.example.json")
     config = json.loads((ROOT / "examples/durable.example.json").read_text())
     with tempfile.TemporaryDirectory(prefix="tracaus-durable-") as temp:
         files = []
-        for mode in ("same", "split"):
-            if mode == "split":
-                spec = {**spec, "bedrock_region": "us-east-1"}
-            for target in ("standalone", "agentcore"):
-                for stage, value in examples(spec, {**config, "runtime_target": target}).items():
-                    path = Path(temp) / f"{mode}-{target}-{stage}.json"
+        for example in ("deployment", "ecs"):  # EC2 instances, then ECS services
+            spec = load(ROOT / f"examples/{example}.example.json")
+            for mode in ("same", "split"):
+                if mode == "split":
+                    spec = {**spec, "bedrock_region": "us-east-1"}
+                for target in ("standalone", "agentcore"):
+                    for stage, value in examples(spec, {**config, "runtime_target": target}).items():
+                        path = Path(temp) / f"{example}-{mode}-{target}-{stage}.json"
+                        path.write_text(json.dumps(value))
+                        files.append(str(path))
+                api = {
+                    **{k: v for k, v in spec.items() if k != "model_arns"},
+                    "model_provider": "model_api",
+                    "model_id": "provider-model",
+                    "model_api": {"protocol": "openai", "base_url": "https://api.example.com/v1"},
+                }
+                for stage, value in examples(api, {**config, "runtime_target": "standalone"}).items():
+                    path = Path(temp) / f"{example}-{mode}-model-api-{stage}.json"
                     path.write_text(json.dumps(value))
                     files.append(str(path))
-            api = {
-                **{k: v for k, v in spec.items() if k != "model_arns"},
-                "model_provider": "model_api",
-                "model_id": "provider-model",
-                "model_api": {"protocol": "openai", "base_url": "https://api.example.com/v1"},
-            }
-            for stage, value in examples(api, {**config, "runtime_target": "standalone"}).items():
-                path = Path(temp) / f"{mode}-model-api-{stage}.json"
-                path.write_text(json.dumps(value))
-                files.append(str(path))
         subprocess.run(
             [str(Path(sys.executable).parent / "cfn-lint"), "--non-zero-exit-code", "warning", "-t", *files],
             check=True,

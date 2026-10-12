@@ -5,14 +5,14 @@ import sys
 from pathlib import Path
 
 from infra import release
-from infra.spec import existing_log_groups, load, log_groups, metric_catalog
+from infra.spec import ecs_targets, existing_log_groups, load, log_groups, metric_catalog, tool_functions
 from infra.verify import VerificationError
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    build_parser = commands.add_parser("build", help="Build both inventory-bound read-only tools")
+    build_parser = commands.add_parser("build", help="Build the inventory-bound read-only tools")
     build_parser.add_argument("--spec", type=Path, required=True)
     build_parser.add_argument("--output", type=Path, required=True)
     build_parser.add_argument("--wheelhouse", type=Path, required=True)
@@ -36,7 +36,33 @@ def main():
     iam_parser.add_argument(
         "--instance-role", action="store_true", help="Also create the instance role and profile for the agent"
     )
+    discover_parser = commands.add_parser(
+        "ecs-discover",
+        help="Read-only: show where each ECS service's logs go and whether an ALB is in front",
+    )
+    discover_parser.add_argument("--spec", type=Path, required=True)
+    discover_parser.add_argument("--profile", help="AWS profile (the operator role)")
     args = parser.parse_args()
+    if args.command == "ecs-discover":
+        try:
+            import json
+
+            import boto3
+
+            from infra import ecs_discover
+            from infra.aws import clients
+
+            raw = json.loads(args.spec.read_text())
+            if args.profile:
+                session = boto3.Session(profile_name=args.profile)
+                factory = lambda service, region: session.client(service, region_name=region)  # noqa: E731
+            else:
+                factory = clients
+            print(ecs_discover.render(ecs_discover.main(raw, factory)))
+        except (VerificationError, ValueError, KeyError, OSError) as exc:
+            print(f"ECS discovery failed ({type(exc).__name__}); nothing was changed.", file=sys.stderr)
+            return 1
+        return 0
     if args.command == "bootstrap-iam":
         try:
             from infra import bootstrap_iam
@@ -61,7 +87,7 @@ def main():
         )
         return 0
     try:
-        from scripts.build_lambdas import FUNCTIONS, build
+        from scripts.build_lambdas import build
 
         spec = load(args.spec)
         args.output.mkdir(parents=True, exist_ok=True)
@@ -70,13 +96,17 @@ def main():
         existing = existing_log_groups(spec)
         if existing:
             release.write_json(args.output / "existing-log-groups.json", existing)
+        ecs = ecs_targets(spec)
+        if ecs:
+            release.write_json(args.output / "ecs-targets.json", ecs)
         build(
-            FUNCTIONS,
+            tool_functions(spec),
             args.output,
             args.output / "metric-catalog.json",
             args.wheelhouse,
             args.output / "log-scope.json",
             existing_path=args.output / "existing-log-groups.json" if existing else None,
+            ecs_path=args.output / "ecs-targets.json" if ecs else None,
         )
         return 0
     except (VerificationError, ValueError, KeyError, OSError) as exc:

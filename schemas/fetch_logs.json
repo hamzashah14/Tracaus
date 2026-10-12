@@ -3,7 +3,7 @@
   "info": {
     "title": "CloudWatch Logs Fetcher",
     "version": "3.0.0",
-    "description": "Lists an EC2 instance's log groups, or searches one around an incident time"
+    "description": "Lists an EC2 instance's or ECS service's log groups, or searches one around an incident time"
   },
   "paths": {
     "/fetch_cloudwatch_logs": {
@@ -16,7 +16,7 @@
             "name": "instance_id",
             "in": "query",
             "required": false,
-            "description": "EC2 instance ID, e.g. i-0123456789abcdef0. Alone, it lists that instance's log groups.",
+            "description": "Target ID: an EC2 instance ID such as i-0123456789abcdef0, or an ECS service ID such as ecs-orders. Alone, it lists that target's log groups.",
             "schema": {
               "type": "string"
             }

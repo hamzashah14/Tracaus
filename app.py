@@ -42,6 +42,7 @@ STEPS = {
     "thinking": "Thinking…",
     "tool:fetch_logs": "Reading logs…",
     "tool:fetch_metrics": "Reading metrics…",
+    "tool:fetch_ecs": "Reading ECS service state…",
     "tool": "Using a read-only tool…",
     "checking": "Checking the answer against the evidence…",
 }
@@ -255,7 +256,7 @@ if problems:
             connection_example += (
                 "AGENTCORE_RUNTIME_ARN=\nAGENTCORE_ENDPOINT="
                 if settings.runtime_target == "agentcore"
-                else "LOGS_TOOL_ARN=\nMETRICS_TOOL_ARN=\n"
+                else "LOGS_TOOL_ARN=\nMETRICS_TOOL_ARN=\n# ECS_TOOL_ARN=  (only with ECS services)\n"
                 "# Development only: TRACAUS_LOCAL_TOOLS=<local tools file> replaces RUNTIME_RELEASE and the tool ARNs."
             )
         st.code(connection_example, language="bash")

@@ -150,7 +150,10 @@ def validate_result(result, payload):
         or any(type(v) is not int or v < 0 for v in result["usage"].values())
         or any(
             not isinstance(result.get(key), list)
-            or any(not isinstance(v, str) or v not in {"fetch_logs", "fetch_metrics"} for v in result[key])
+            or any(
+                not isinstance(v, str) or v not in {"fetch_logs", "fetch_metrics", "fetch_ecs"}
+                for v in result[key]
+            )
             or len(result[key]) != len(set(result[key]))
             for key in ("tools", "evidence")
         )

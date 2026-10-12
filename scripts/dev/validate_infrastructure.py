@@ -9,12 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from infra import bootstrap_iam, templates  # noqa: E402
-from infra.spec import load, name  # noqa: E402
+from infra.spec import load, name, tool_functions  # noqa: E402
 
 
 def examples(spec):
     artifacts = {}
-    for function in ("fetch_logs", "fetch_metrics"):
+    for function in tool_functions(spec):
         artifacts[function] = {
             "bucket": templates.bucket_name(spec, "tools"),
             "key": f"releases/{spec['release_id']}/" + "a" * 64 + ".zip",
@@ -34,20 +34,21 @@ def examples(spec):
 
 
 def main():
-    spec = load(ROOT / "examples/deployment.example.json")
     with tempfile.TemporaryDirectory(prefix="tracaus-cfn-") as temp:
         files = []
-        for region_mode in ("same", "split"):
-            if region_mode == "split":
-                spec = {**spec, "bedrock_region": "us-east-1"}
-            stages = {
-                **examples(spec),
-                "iam-bootstrap": bootstrap_iam.render(spec, agentcore=True, instance_role=True),
-            }
-            for stage, template in stages.items():
-                path = Path(temp) / f"{region_mode}-{stage}.json"
-                path.write_text(json.dumps(template))
-                files.append(str(path))
+        for example in ("deployment", "ecs"):  # EC2 instances, then ECS services
+            spec = load(ROOT / f"examples/{example}.example.json")
+            for region_mode in ("same", "split"):
+                if region_mode == "split":
+                    spec = {**spec, "bedrock_region": "us-east-1"}
+                stages = {
+                    **examples(spec),
+                    "iam-bootstrap": bootstrap_iam.render(spec, agentcore=True, instance_role=True),
+                }
+                for stage, template in stages.items():
+                    path = Path(temp) / f"{example}-{region_mode}-{stage}.json"
+                    path.write_text(json.dumps(template))
+                    files.append(str(path))
         subprocess.run(
             [str(Path(sys.executable).parent / "cfn-lint"), "--non-zero-exit-code", "warning", "-t", *files],
             check=True,

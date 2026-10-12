@@ -3,20 +3,20 @@
   "info": {
     "title": "CloudWatch / CWAgent Metrics Fetcher",
     "version": "3.0.0",
-    "description": "Fetches one CloudWatch metric for one EC2 instance"
+    "description": "Fetches one CloudWatch metric for one EC2 instance or ECS service"
   },
   "paths": {
     "/fetch_cloudwatch_metrics": {
       "get": {
-        "summary": "Fetch one metric for one EC2 instance",
-        "description": "Fetch an allowlisted metric for an authorized instance. Built-ins cover AWS/EC2, CWAgent memory/swap/disk/process aggregate and dimensionless AIOpsNginx nginx-upstream-errors-<instance>. Use metric_id for configured exact process, volume or custom dimensions. Arbitrary namespace overrides are rejected. No-data differs from access failure.",
+        "summary": "Fetch one metric for one EC2 instance or ECS service",
+        "description": "Fetch an allowlisted metric for an authorized instance. Built-ins cover AWS/EC2, CWAgent memory/swap/disk/process aggregate and dimensionless AIOpsNginx nginx-upstream-errors-<instance>. For an ECS service (instance_id ecs-...) built-ins are CPUUtilization and MemoryUtilization (AWS/ECS), RunningTaskCount, DesiredTaskCount and PendingTaskCount (Container Insights, only when enabled) and, when an ALB is in front, HTTPCode_Target_5XX_Count, HTTPCode_Target_4XX_Count, RequestCount, TargetResponseTime, UnHealthyHostCount and HealthyHostCount. Use metric_id for configured exact process, volume or custom dimensions. Arbitrary namespace overrides are rejected. No-data differs from access failure.",
         "operationId": "fetch_cloudwatch_metrics",
         "parameters": [
           {
             "name": "instance_id",
             "in": "query",
             "required": true,
-            "description": "EC2 instance ID, e.g. i-0123456789abcdef0.",
+            "description": "Target ID: an EC2 instance ID such as i-0123456789abcdef0, or an ECS service ID such as ecs-orders.",
             "schema": {
               "type": "string"
             }

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tracaus.metrics import validate_catalog  # noqa: E402 — runnable from outside the repository
 
-FUNCTIONS = ("fetch_logs", "fetch_metrics")
+FUNCTIONS = ("fetch_logs", "fetch_metrics", "fetch_ecs")
 PIPELINE_FUNCTIONS = (
     "incident_ingress",
     "incident_dispatch",
@@ -37,6 +37,7 @@ def build(
     log_scope_path=None,
     architecture="x86_64",
     existing_path=None,
+    ecs_path=None,
 ):
     if sys.version_info[:2] != (3, 12):
         raise SystemExit("Lambda builds require Python 3.12.")
@@ -97,12 +98,17 @@ def build(
             entries["config/existing-log-groups.json"] = json.dumps(
                 json.loads(existing_path.read_text()), sort_keys=True, separators=(",", ":")
             ).encode()
+        if ecs_path:
+            entries["config/ecs-targets.json"] = json.dumps(
+                json.loads(ecs_path.read_text()), sort_keys=True, separators=(",", ":")
+            ).encode()
         entries["requirements/lambda.lock"] = lock.read_bytes()
         for filename in (
             "agent-instruction.txt",
             "schemas/fetch_logs.json",
             "schemas/fetch_metrics.json",
             "tracaus_agentcore.py",
+            *(["schemas/fetch_ecs.json"] if ecs_path else []),
         ):
             entries[filename] = (ROOT / filename).read_bytes()
         manifest = {
@@ -137,9 +143,11 @@ def build(
                         "config/metric-catalog.json",
                         "config/log-scope.json",
                         "config/existing-log-groups.json",
+                        "config/ecs-targets.json",
                         "agent-instruction.txt",
                         "schemas/fetch_logs.json",
                         "schemas/fetch_metrics.json",
+                        "schemas/fetch_ecs.json",
                         "tracaus_agentcore.py",
                     }
                 },
@@ -157,15 +165,17 @@ def main():
     parser.add_argument("--catalog", type=Path, default=ROOT / "config/metric-catalog.json")
     parser.add_argument("--wheelhouse", type=Path)
     parser.add_argument("--log-scope", type=Path)
+    parser.add_argument("--ecs-targets", type=Path)
     parser.add_argument("--architecture", choices=("x86_64", "arm64"), default="x86_64")
     args = parser.parse_args()
     build(
-        args.function or FUNCTIONS,
+        args.function or (FUNCTIONS if args.ecs_targets else FUNCTIONS[:2]),
         args.output,
         args.catalog,
         args.wheelhouse,
         args.log_scope,
         args.architecture,
+        ecs_path=args.ecs_targets,
     )
 
 
