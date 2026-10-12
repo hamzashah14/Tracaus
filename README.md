@@ -88,7 +88,7 @@ It checks your permissions (read-only), asks once, then creates the resources an
 It stops twice for you: a typed `yes` for **one paid model request** (a test through the real tools), and
 confirming the **subscription emails** AWS sends. Nothing is routed to Tracaus before its `routing` stage, so an
 earlier failure leaves your alarms and servers untouched. Run `deploy` again to resume after a stop or a failure, and
-`./bin/tracaus status` any time to see where it is. It never deletes anything.
+`./bin/tracaus status` any time to see where it is. `deploy` never deletes anything.
 
 **4. Open the UI**
 
@@ -106,6 +106,20 @@ Work through [ACCEPTANCE.md](docs/ACCEPTANCE.md): telemetry, alert delivery, acc
 something on a staging host and confirm an alarm fires and an alert email arrives. After `deploy`,
 **automatic investigations are paused on purpose**: alerts still go out, and you enable investigations in a later
 release ([DEPLOY.md](docs/DEPLOY.md), section 3.8).
+
+**6. Remove everything when you are done**
+
+```bash
+./bin/tracaus teardown --dry-run   # shows what would be deleted; deletes nothing
+./bin/tracaus teardown             # deletes it, after you type PROJECT-ENVIRONMENT
+```
+
+`teardown` deletes the stacks, then what CloudFormation keeps when a stack is deleted (the incident database, the
+evidence buckets, queues, topics, functions, roles, log groups, the secret), schedules the KMS key for deletion (7
+days, the AWS minimum), then the three IAM roles and the profile entries `setup` wrote. It never touches your servers,
+your own log groups or Bedrock access. Anything it cannot remove is listed loudly at the end with the reason and the
+manual steps, and the exit code is 1. Run it again after fixing the cause. It needs a profile with administrator
+rights. See [DEPLOY.md](docs/DEPLOY.md#remove-everything-teardown).
 
 **More than one person using the UI?** Use team mode: each person signs in through your identity provider
 ([Three choices](#three-choices), [DEPLOY.md](docs/DEPLOY.md), section 7). Do not host the shared-password UI for others.
@@ -293,7 +307,7 @@ servers (the telemetry setup is for Linux EC2) and a Model API with AgentCore.
 ## Folder structure
 
 ```text
-bin/tracaus          the three commands: setup, deploy, status, ui
+bin/tracaus          the guided commands: setup, deploy, status, ui, teardown
 app.py               the web UI (Streamlit)
 
 tracaus/             the product. Runs in AWS (inside the Lambdas) and in the UI

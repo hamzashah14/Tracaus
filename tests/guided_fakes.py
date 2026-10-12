@@ -74,3 +74,6 @@ class ScriptedPrompter(Prompter):
 
     def secret(self, key, question):
         return self._take(key)
+
+    def typed(self, key, question, expected):
+        return self._take(key) == expected

@@ -1,4 +1,4 @@
-"""`python -m infra.guided setup|deploy|status|ui`: the guided path through docs/DEPLOY.md.
+"""`python -m infra.guided setup|deploy|status|ui|teardown`: the guided path through docs/DEPLOY.md.
 
 Every command prints numbered steps, explains each failure (what, why, what is safe, what next) and exits with
 0 done, 1 failed, 2 waiting on a named step, 3 refused by a safety rule, 130 interrupted."""
@@ -11,6 +11,7 @@ from pathlib import Path
 from infra.deploy.automation import private_dir
 from infra.guided import deploy as guided_deploy
 from infra.guided import setup as guided_setup
+from infra.guided import teardown as guided_teardown
 from infra.guided.common import GuidedError, guided_lock
 from infra.guided.console import Console
 from infra.guided.discover import DiscoveryError
@@ -55,6 +56,21 @@ def parser():
     commands.add_parser(
         "status", parents=[common], help="read-only: what exists, what is routed, what to do next"
     )
+    teardown = commands.add_parser(
+        "teardown",
+        parents=[common],
+        help="delete what Tracaus created, and list anything that needs manual removal",
+    )
+    teardown.add_argument("--admin-profile", help="profile that deletes everything (administrator rights)")
+    teardown.add_argument(
+        "--confirm",
+        metavar="NAME",
+        help="PROJECT-ENVIRONMENT, given in advance instead of typed at the prompt",
+    )
+    teardown.add_argument("--dry-run", action="store_true", help="show what would be deleted, then stop")
+    teardown.add_argument(
+        "--keep-roles", action="store_true", help="keep the three IAM roles and their stack"
+    )
     ui = commands.add_parser("ui", parents=[common], help="open the UI on 127.0.0.1")
     ui.add_argument("--team-file", type=Path, help="team mode: the team.toml allowlist")
     ui.add_argument(
@@ -89,6 +105,14 @@ def dispatch(args, console, directory):
         ).run()
     if args.command == "status":
         return guided_deploy.status(console, directory)
+    if args.command == "teardown":
+        options = guided_teardown.Options(
+            admin_profile=args.admin_profile,
+            confirm=args.confirm,
+            dry_run=args.dry_run,
+            keep_roles=args.keep_roles,
+        )
+        return guided_teardown.Teardown(console, prompt, directory, options).run()
     return guided_deploy.launch_ui(
         console, prompt, directory, team_file=args.team_file, prompt_password=args.password_prompt
     )
@@ -109,7 +133,7 @@ def main(argv=None):
         return 1
     console.open_log(directory / "guided.log")
     try:
-        if args.command in {"setup", "deploy"}:  # status and ui never block them (or each other)
+        if args.command in {"setup", "deploy", "teardown"}:  # status and ui never block them (or each other)
             with guided_lock(directory):
                 return dispatch(args, console, directory)
         return dispatch(args, console, directory)
@@ -144,6 +168,8 @@ def main(argv=None):
     except KeyboardInterrupt:
         console.say(
             "\nInterrupted. Files are written whole or not at all, and a running deployment keeps its journal."
+            if args.command != "teardown"
+            else "\nInterrupted. A stack deletion that already started keeps running in AWS. Nothing is half-written."
         )
         console.say("Run the same command again to continue.")
         return 130

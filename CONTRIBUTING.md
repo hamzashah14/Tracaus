@@ -8,7 +8,7 @@ privately ([SECURITY.md](SECURITY.md)), never in public issues.
 
 | Path | What it holds |
 | --- | --- |
-| `bin/tracaus` | Launcher for the guided commands (`setup`, `deploy`, `status`, `ui`) |
+| `bin/tracaus` | Launcher for the guided commands (`setup`, `deploy`, `status`, `ui`, `teardown`) |
 | `app.py`, `.streamlit/`, `.env.example` | Streamlit web UI and its settings |
 | `assets/` | Logos: square mark (favicon), animated and PNG wordmarks for light and dark pages |
 | `tracaus/` | The product runtime: alert pipeline, investigation, chat, safety. Runs in AWS and in the UI |
@@ -42,7 +42,7 @@ privately ([SECURITY.md](SECURITY.md)), never in public issues.
 
 - `spec.py` and `deployment.schema.json`: read and validate `deployment.json`. Everything else builds on it.
 - `guided/`: the three-command path. `setup.py`, `deploy.py` (also `status` and `ui`), `discover.py` (read-only
-  discovery), `files.py` (settings files and the readiness report), `roles.py` (IAM roles and AWS profiles),
+  discovery), `files.py` (settings files and the readiness report), `roles.py` (IAM roles and AWS profiles), `teardown.py` (the only command that deletes: stacks, what they keep, roles),
   `prompt.py`, `console.py`, `common.py`, `__main__.py`.
 - `stacks/`: `templates.py`, `durable_templates.py`, `observation_templates.py`, `owned_runtime.py` write the
   CloudFormation; `bootstrap_iam.py` writes the IAM roles template.

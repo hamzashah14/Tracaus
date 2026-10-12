@@ -56,7 +56,8 @@ adds a secret that you create before `check` (section 8).
 ## Guided path: three commands
 
 `./bin/tracaus setup`, `deploy` and `ui` wrap sections 3 and 4 below. Use them first; the manual commands remain the
-fallback and nothing in them changed. Each command prints numbered steps, says what it is about to do, explains every
+fallback and nothing in them changed. A fourth command, `teardown`, removes everything again
+([below](#remove-everything-teardown)). Each command prints numbered steps, says what it is about to do, explains every
 failure (what failed, why, what is safe, what to do next) and can be run again.
 
 | Command | What it does | What you answer |
@@ -65,6 +66,7 @@ failure (what failed, why, what is safe, what to do next) and can be run again.
 | `deploy` | Re-checks the plan, runs `check`, asks once, then runs `apply` and shows each stage as it completes | Yes to apply; a typed `yes` to the paid model request; confirming the subscription emails |
 | `status` | Read-only: stages, whether anything is routed, stack statuses, the next command | nothing |
 | `ui` | Adds the UI profiles, creates a password (shown once, saved mode 600), starts the UI on `127.0.0.1` | whether to write the profiles |
+| `teardown` | Deletes what Tracaus created and lists anything it could not delete | the administrator profile; the project name, typed |
 
 **Does it need an administrator?** Only once, to create the three IAM roles, and only if they do not exist. That needs a
 profile that can create CloudFormation stacks with `CAPABILITY_NAMED_IAM` and IAM roles. `setup` asks which profile to use,
@@ -79,8 +81,9 @@ answers, no secrets, reused as defaults), `discovery.json`, `plan.json`, `plan.h
 
 **If something fails.** Nothing is routed to Tracaus before the `routing` stage, so an earlier failure leaves your alarms
 and servers untouched. CloudFormation undoes a failed stack change by itself, and the journal keeps what is done:
-run `deploy` again to resume. The commands never delete queues, keys, evidence, subscriptions or alarms; the only AWS
-resource `setup` may remove is its own empty role stack after a failed first creation, and only after you agree. A changed
+run `deploy` again to resume. `setup`, `deploy`, `status` and `ui` never delete queues, keys, evidence, subscriptions or alarms; the only AWS
+resource `setup` may remove is its own empty role stack after a failed first creation, and only after you agree. Only
+`teardown` deletes, and only after you type the project name. A changed
 source or setting needs a new release (`refresh`, section 3.9). To roll back or retire a release, see
 [OPERATE.md](OPERATE.md#roll-back-and-retire-old-releases).
 
@@ -91,13 +94,55 @@ source or setting needs a new release (`refresh`, section 3.9). To roll back or 
 | `--yes` | Accept defaults. It never answers IAM or paid questions |
 | `--allow-iam-bootstrap`, `--allow-paid-canary` | Consent, without asking, to creating the roles or the first paid model request |
 | `--allow-paid-canary-retry` | Separate consent to a SECOND paid request after an expired or unclear first one. `--allow-paid-canary` never covers it |
-| `--admin-profile NAME` | `setup`: the profile that may create the IAM roles |
+| `--admin-profile NAME` | `setup`: the profile that may create the IAM roles. `teardown`: the profile that deletes everything (administrator rights) |
+| `--confirm NAME`, `--dry-run`, `--keep-roles` | `teardown`: the project name (`PROJECT-ENVIRONMENT`) given in advance instead of typed; show the plan and stop; keep the three IAM roles and their stack |
 | `--skip-install`, `--skip-check` | `setup`: skip the package download. `deploy`: skip the read-only permission check |
 | `--team-file FILE`, `--password-prompt` | `ui`: team mode, or type the password instead of generating one |
 | `--debug` | Show the full trace of an unexpected error |
 
 Exit codes: 0 done, 1 failed, 2 waiting on a named step, 3 refused by a safety rule, 130 interrupted. This path has
 only been tested with stubbed AWS: it has never run against a real account.
+
+### Remove everything (`teardown`)
+
+```bash
+./bin/tracaus teardown --dry-run                  # the plan only; deletes nothing
+./bin/tracaus teardown --admin-profile ADMIN      # deletes, after you type PROJECT-ENVIRONMENT
+```
+
+**What it does, in order.** It signs in with the administrator profile and checks the account against
+`deployment.json`. It finds the stacks tagged with your project and environment (in the monitor and Bedrock regions)
+and what they contain, and saves that list to `teardown.json` before deleting anything. After the plan it asks you to
+type `PROJECT-ENVIRONMENT` (or pass `--confirm`; `--yes` and an answers file can never confirm). Then:
+
+1. It deletes the stacks newest first, switching off the termination protection that `seal` set on release stacks.
+   A stack stuck in `DELETE_FAILED` is deleted again while keeping the resource that blocked it, and that resource
+   is listed. A stack another stack still depends on is retried after the others.
+2. It removes what CloudFormation keeps when a stack is deleted: AgentCore endpoint and runtime, Lambda functions
+   (and their log groups), queues, topics, log groups, the generated log-cursor secret (no recovery window), the
+   incident table (deletion protection switched off first), the evidence and artifact buckets (every object version
+   and delete marker, then the bucket), and the roles. Names must carry your project prefix.
+3. It schedules the KMS key for deletion (7 days, the AWS minimum), but only when everything the key encrypts was
+   deleted. Until the date you can cancel it in the KMS console.
+4. It deletes the role stack (not if a stack could not be deleted, because that stack still needs the execution
+   role; not with `--keep-roles`), removes the profile blocks `setup` wrote into `~/.aws/config` (backup made), and sets
+   aside `state.json` and `ui-connection.json` so a fresh `setup` starts clean.
+5. It asks the resource tag index what is still tagged for this project and reports anything it did not know about.
+
+**What it never touches.** Your EC2 instances and ECS services, the CloudWatch agent, your own log groups
+(`existing_log_groups`), Bedrock model access, other projects, and any stack that was not created by these tools.
+The log groups under `/PROJECT/ENVIRONMENT/` are Tracaus's: they hold the logs your agent shipped, and they are
+deleted (the agent creates an empty group the next time it writes).
+
+**When something cannot be deleted.** Each such item is listed under `MANUAL REMOVAL NEEDED` with the reason and the
+steps, the local files are kept, and the exit code is 1. Typical causes: S3 Object Lock retention, a role still in an
+instance profile, a stack another tool depends on, missing permissions, an expired sign-in. Fix it and run `teardown`
+again; it continues from the saved list. The EC2 test instance, its role and any administrator access key are yours
+to delete.
+
+**Not verified.** The behaviour is covered by a simulated account and by a simulation on moto, never by a real AWS
+account. The AgentCore deletes and the id formats CloudFormation reports for AgentCore resources are unconfirmed.
+Run `--dry-run` first, and check the result in the console.
 
 ## 1. What you need before you start
 

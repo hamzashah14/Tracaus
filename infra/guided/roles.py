@@ -3,7 +3,8 @@
 The role stack is the one AWS resource the guided commands create outside `apply`, with a profile the user
 chooses once. It is created through CloudFormation, so a failure rolls itself back. The only thing this module
 ever deletes is a stack it created itself, whose first creation ended in ROLLBACK_COMPLETE (it then holds no
-resources). Profiles are written into `~/.aws/config` inside marked blocks, after a backup."""
+resources). Profiles are written into `~/.aws/config` inside marked blocks, after a backup; `teardown` removes
+only those marked blocks again."""
 
 import datetime
 import json
@@ -175,7 +176,7 @@ def _reset(cfn, name, stack, console, prompter, poll, timeout, sleep, clock):
 def _wait(cfn, name, console, poll, timeout, sleep, clock):
     seen, deadline = set(), clock() + timeout
     while True:
-        for event in _new_events(cfn, name, seen):
+        for event in new_events(cfn, name, seen):
             console.info(
                 f"{clean(event.get('LogicalResourceId', ''))}: {clean(event.get('ResourceStatus', ''))}"
             )
@@ -192,7 +193,7 @@ def _wait(cfn, name, console, poll, timeout, sleep, clock):
         sleep(poll)
 
 
-def _new_events(cfn, name, seen):
+def new_events(cfn, name, seen):
     try:
         events = cfn.describe_stack_events(StackName=name)["StackEvents"]
     except ClientError:
@@ -297,12 +298,47 @@ def write_profiles(path, blocks, *, now=None):
         applied.append(block)
     if not result["written"]:
         return result
+    result["backup"] = _commit(real, text, updated, now)
+    if not _matches(real, applied):
+        _restore(real, text, result["backup"])
+        raise RolesError("The AWS config did not read back as written; the original was restored.")
+    return result
+
+
+def remove_profiles(path, names, *, now=None):
+    """Remove the marked blocks `write_profiles` added. A profile you wrote yourself is never touched.
+
+    Returns {"removed", "backup"}. The file is backed up first, written atomically and re-read."""
+    real = Path(path).resolve()
+    result = {"removed": [], "backup": None}
+    if not real.exists():
+        return result
+    if not real.is_file() or real.stat().st_uid != os.getuid():
+        raise RolesError("The AWS config path is not a regular file you own; edit it by hand.")
+    text = updated = real.read_text()
+    for name in names:
+        start, end = _markers(name)
+        block = re.compile(r"\n?" + re.escape(start) + r"\n.*?" + re.escape(end) + r"\n?", re.S)
+        if block.search(updated):
+            updated = block.sub("", updated, count=1)
+            result["removed"].append(name)
+    if not result["removed"]:
+        return result
+    result["backup"] = _commit(real, text, updated, now)
+    if any(_markers(name)[0] in real.read_text() for name in result["removed"]):
+        _restore(real, text, result["backup"])
+        raise RolesError("The AWS config did not read back as expected; the original was restored.")
+    return result
+
+
+def _commit(real, text, updated, now):
+    """Back the file up (if it exists), then replace it atomically. Returns the backup path or None."""
+    backup = None
     if real.exists():
         stamp = (now or datetime.datetime.now(datetime.timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
         backup = real.with_name(f"{real.name}.tracaus-backup-{stamp}")
         backup.write_text(text)
         os.chmod(backup, 0o600)
-        result["backup"] = str(backup)
     real.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = real.with_name(real.name + ".tmp")
     mode = real.stat().st_mode & 0o777 if real.exists() else 0o600
@@ -315,14 +351,13 @@ def write_profiles(path, blocks, *, now=None):
         os.replace(temporary, real)
     finally:
         temporary.unlink(missing_ok=True)
-    if not _matches(real, applied):
-        real.write_text(text)
-        if result["backup"]:
-            Path(result["backup"]).unlink(
-                missing_ok=True
-            )  # the original is back; the copy would only confuse
-        raise RolesError("The AWS config did not read back as written; the original was restored.")
-    return result
+    return str(backup) if backup else None
+
+
+def _restore(real, text, backup):
+    real.write_text(text)
+    if backup:
+        Path(backup).unlink(missing_ok=True)  # the original is back; the copy would only confuse
 
 
 def _matches(path, blocks):

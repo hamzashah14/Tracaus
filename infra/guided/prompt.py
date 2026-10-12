@@ -80,6 +80,10 @@ class Prompter:
     def secret(self, key, question):
         raise NotImplementedError
 
+    def typed(self, key, question, expected):
+        """A destructive step: the person types `expected`. Only a terminal can answer; files and --yes cannot."""
+        raise Refused(f"'{key}' must be typed at a terminal, or pass --confirm {expected}")
+
     def _remember(self, key, value):
         self.record[key] = value
         return value
@@ -207,6 +211,11 @@ class ConsolePrompter(Prompter):
                 return self._remember(key, text[0] == "y")
             self.console.warn("Answer y or n.")
         raise NeedsAnswer(f"No valid answer for '{key}' after {MAX_TRIES} tries.")
+
+    def typed(self, key, question, expected):
+        self._ready(key)
+        self.console.say(f"\n{question}\n  Type {expected} to continue, anything else to stop.")
+        return self._read(key) == expected
 
     def secret(self, key, question):
         self._ready(key)

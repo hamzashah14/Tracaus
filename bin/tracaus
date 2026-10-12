@@ -12,6 +12,7 @@ Usage: ./bin/tracaus COMMAND [options]
   deploy   check permissions, create the resources with live progress, handle each stop
   status   read-only: what exists, what is routed, what to do next
   ui       open the UI on http://127.0.0.1:8501
+  teardown delete what Tracaus created; lists anything that needs manual removal
 
 Run the three in order: setup, deploy, ui. Every command can be run again.
 Add --help after a command for its options. Guide: docs/DEPLOY.md
@@ -20,7 +21,7 @@ TEXT
 
 case "${1:-}" in
   "" | -h | --help | help) usage; exit 0 ;;
-  setup | deploy | status | ui) ;;
+  setup | deploy | status | ui | teardown) ;;
   *) usage >&2; exit 2 ;;
 esac
 
