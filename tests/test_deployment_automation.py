@@ -1555,7 +1555,7 @@ def test_driver_turns_only_the_pending_exit_of_a_durable_operation_into_waiting(
         driver.command("infra.deploy.durable_ops", ["verify-routing"], output)
     assert not waiting.value.automatic and "same plan hash" in str(waiting.value)
     for module, code in (
-        ("scripts.build_pipeline", 3),
+        ("infra", 3),
         ("infra.deploy.durable_ops", 1),
         ("infra.deploy.durable_ops", 2),
     ):

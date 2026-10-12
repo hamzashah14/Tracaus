@@ -914,11 +914,11 @@ not been run against real AWS. Pick one path per release. If you start by hand, 
 
 ```bash
 python -m infra build --spec .local/customer/deployment.json --output .local/customer/build/tools --wheelhouse .build/wheels
-python scripts/build_pipeline.py --output .local/customer/build/pipeline --wheelhouse .build/wheels
+python -m infra build-pipeline --output .local/customer/build/pipeline --wheelhouse .build/wheels
 # agentcore only (ARM64 host):
 python scripts/build_lambdas.py --function incident_investigate --architecture arm64 --output .local/customer/build/host --wheelhouse .build/wheels
 # observers only:
-python scripts/build_observations.py --spec .local/customer/deployment.json --output .local/customer/build/observation --wheelhouse .build/wheels
+python -m infra build-observations --spec .local/customer/deployment.json --output .local/customer/build/observation --wheelhouse .build/wheels
 python -m infra.deploy.durable --spec .local/customer/deployment.json --config .local/customer/runtime.json --output .local/customer/bundle --build-dir .local/customer/build/pipeline --tool-build-dir .local/customer/build/tools
 ```
 

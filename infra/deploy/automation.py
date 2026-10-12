@@ -369,7 +369,7 @@ class Driver:
                 "infra",
                 ["build", "--spec", p["spec"], "--wheelhouse", p["wheelhouse"], "--output", builds / "tools"],
             ),
-            ("scripts.build_pipeline", ["--wheelhouse", p["wheelhouse"], "--output", builds / "pipeline"]),
+            ("infra", ["build-pipeline", "--wheelhouse", p["wheelhouse"], "--output", builds / "pipeline"]),
         ]
         if self.plan["runtime_config"]["runtime_target"] == "agentcore":
             commands.append(
@@ -390,8 +390,9 @@ class Driver:
         if "observability" in self.plan["spec"]:
             commands.append(
                 (
-                    "scripts.build_observations",
+                    "infra",
                     [
+                        "build-observations",
                         "--spec",
                         p["spec"],
                         "--wheelhouse",

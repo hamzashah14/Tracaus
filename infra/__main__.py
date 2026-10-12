@@ -1,4 +1,4 @@
-"""Build inventory-bound tools; deploy through infra.deploy.durable and infra.deploy.durable_ops."""
+"""Build the Lambda packages, write the IAM template, look up ECS logs; deploy through infra.deploy.durable_ops."""
 
 import argparse
 import sys
@@ -6,7 +6,15 @@ from pathlib import Path
 
 from infra.deploy import release
 from infra.deploy.verify import VerificationError
-from infra.spec import ecs_targets, existing_log_groups, load, log_groups, metric_catalog, tool_functions
+from infra.spec import (
+    ROOT,
+    ecs_targets,
+    existing_log_groups,
+    load,
+    log_groups,
+    metric_catalog,
+    tool_functions,
+)
 
 
 def main():
@@ -16,6 +24,15 @@ def main():
     build_parser.add_argument("--spec", type=Path, required=True)
     build_parser.add_argument("--output", type=Path, required=True)
     build_parser.add_argument("--wheelhouse", type=Path, required=True)
+    pipeline_parser = commands.add_parser("build-pipeline", help="Build the durable pipeline Lambda packages")
+    pipeline_parser.add_argument("--output", type=Path, default=ROOT / ".build/pipeline")
+    pipeline_parser.add_argument("--wheelhouse", type=Path, required=True)
+    observers_parser = commands.add_parser(
+        "build-observations", help="Build the customer-owned observer packages"
+    )
+    observers_parser.add_argument("--spec", type=Path, required=True)
+    observers_parser.add_argument("--output", type=Path, required=True)
+    observers_parser.add_argument("--wheelhouse", type=Path, required=True)
     iam_parser = commands.add_parser(
         "bootstrap-iam",
         help="Write the CloudFormation template that creates the roles named in deployment.json",
@@ -85,6 +102,19 @@ def main():
             f"--stack-name {spec['project']}-{spec['environment']}-iam --capabilities CAPABILITY_NAMED_IAM "
             f"--region {spec['monitor_region']}"
         )
+        return 0
+    if args.command == "build-pipeline":
+        from scripts.build_lambdas import PIPELINE_FUNCTIONS, build
+
+        build(PIPELINE_FUNCTIONS, args.output, ROOT / "config/metric-catalog.json", args.wheelhouse)
+        return 0
+    if args.command == "build-observations":
+        from infra.deploy.observations import build_release
+
+        spec = load(args.spec)
+        if "observability" not in spec:
+            raise ValueError("Declare observability configuration before building")
+        build_release(spec, args.output, args.wheelhouse)
         return 0
     try:
         from scripts.build_lambdas import build

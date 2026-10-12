@@ -52,7 +52,7 @@ privately ([SECURITY.md](SECURITY.md)), never in public issues.
   are helpers.
 - `maintain/`: `reconcile.py` (retire old resources) and `security_ops.py` (recipients and erasure).
 
-**`scripts/`**: `build_lambdas.py`, `build_pipeline.py`, `build_observations.py` make the Lambda ZIPs;
+**`scripts/`**: `build_lambdas.py` makes the Lambda ZIPs (`python -m infra build*` call it);
 `collector_heartbeat.py` runs on your servers; `run_customer_ui.py`, `make_local_tools.py`, `replay_incident.py` and
 `replay_notification.py` are operator helpers. `scripts/dev/` is for CI and maintainers.
 
