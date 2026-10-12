@@ -96,9 +96,12 @@ class Prompter:
 class ConsolePrompter(Prompter):
     """Asks a person at a terminal. Without a terminal it refuses instead of waiting."""
 
-    def __init__(self, console, allowed=(), *, stdin=None, input_fn=input, secret_fn=getpass.getpass):
+    def __init__(
+        self, console, allowed=(), *, defaults=None, stdin=None, input_fn=input, secret_fn=getpass.getpass
+    ):
         super().__init__(allowed)
         self.console, self.input, self.secret_fn = console, input_fn, secret_fn
+        self.defaults = dict(defaults or {})  # earlier answers, offered again as the default
         self.stdin = stdin or sys.stdin
 
     def _ready(self, key):
@@ -113,6 +116,7 @@ class ConsolePrompter(Prompter):
 
     def ask(self, key, question, default=None, validate=None):
         self._ready(key)
+        default = self.defaults.get(key, default) if isinstance(self.defaults.get(key, ""), str) else default
         for _ in range(MAX_TRIES):
             self.console.say(
                 f"\n{question}" + (f"  [default: {default}]" if default not in (None, "") else "")
@@ -129,6 +133,7 @@ class ConsolePrompter(Prompter):
     def choose(self, key, question, options, default=None):
         self._ready(key)
         values = [value for value, _ in options]
+        default = self.defaults[key] if self.defaults.get(key) in values else default
         for _ in range(MAX_TRIES):
             self.console.say(f"\n{question}")
             for number, (value, label) in enumerate(options, 1):
@@ -144,10 +149,12 @@ class ConsolePrompter(Prompter):
     def pick_many(self, key, question, options, minimum=0, maximum=None, default=()):
         self._ready(key)
         values = [value for value, _ in options]
+        if isinstance(self.defaults.get(key), list):
+            default = [v for v in self.defaults[key] if v in values]
         for _ in range(MAX_TRIES):
             self.console.say(f"\n{question}")
             for number, (value, label) in enumerate(options, 1):
-                self.console.say(f"  {number}. {label}")
+                self.console.say(f"  {number}. {label}" + ("  [previous]" if value in default else ""))
             self.console.say("  Enter numbers separated by commas or ranges such as 1-3, 'all' or 'none'.")
             text = self._read(key).lower()
             picked = self._numbers(text, len(values), default, values)
@@ -181,6 +188,8 @@ class ConsolePrompter(Prompter):
 
     def confirm(self, key, question, default=False, consent=None):
         self._ready(key)
+        if isinstance(self.defaults.get(key), bool) and not consent:
+            default = self.defaults[key]
         for _ in range(MAX_TRIES):
             if consent:
                 self.console.say(f"\n{question}\n  Type 'yes' to continue, anything else to stop.")

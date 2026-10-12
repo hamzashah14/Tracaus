@@ -6,7 +6,7 @@ import stat
 
 import pytest
 
-from infra.guided_console import Console, clean, redact
+from infra.guided.console import Console, clean, redact
 
 
 class Tty(io.StringIO):

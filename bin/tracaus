@@ -1,0 +1,49 @@
+#!/bin/sh
+# Tracaus guided path:  ./bin/tracaus setup | deploy | status | ui
+# Creates .venv with the verified dependencies on first use, then runs `python -m infra.guided`.
+set -eu
+cd "$(dirname "$0")/.."
+
+usage() {
+  cat <<'TEXT'
+Usage: ./bin/tracaus COMMAND [options]
+
+  setup    read your account, ask a few questions, write the settings, show the plan
+  deploy   check permissions, create the resources with live progress, handle each stop
+  status   read-only: what exists, what is routed, what to do next
+  ui       open the UI on http://127.0.0.1:8501
+
+Run the three in order: setup, deploy, ui. Every command can be run again.
+Add --help after a command for its options. Guide: docs/DEPLOY.md
+TEXT
+}
+
+case "${1:-}" in
+  "" | -h | --help | help) usage; exit 0 ;;
+  setup | deploy | status | ui) ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+python=""
+for candidate in python3.12 python3; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+    python="$candidate"
+    break
+  fi
+done
+if [ -z "$python" ]; then
+  echo "Python 3.12 is required (found none). Install it, then run this again." >&2
+  exit 1
+fi
+
+if [ ! -x .venv/bin/python ]; then
+  echo "Creating .venv with $python ..." >&2
+  "$python" -m venv .venv
+fi
+stamp=$(.venv/bin/python -c 'import hashlib; print(hashlib.sha256(open("requirements/dev.lock", "rb").read()).hexdigest())')
+if [ ! -f .venv/.tracaus-lock ] || [ "$(cat .venv/.tracaus-lock)" != "$stamp" ]; then
+  echo "Installing the verified dependencies (first run, or the lock changed) ..." >&2
+  .venv/bin/python -m pip install --require-hashes -r requirements/dev.lock
+  printf '%s' "$stamp" > .venv/.tracaus-lock
+fi
+exec .venv/bin/python -m infra.guided "$@"

@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from infra.guided_console import Console
-from infra.guided_prompt import (
+from infra.guided.console import Console
+from infra.guided.prompt import (
     AnswersPrompter,
     ConsolePrompter,
     NeedsAnswer,
@@ -120,9 +120,9 @@ def test_confirm_plain_and_consent():
     assert prompter.confirm("ok", "Go?", default=True) is True
     assert prompter.confirm("ok2", "Go?") is True
     prompter, _ = console_prompter(["y"])
-    assert prompter.confirm("iam", "Create roles?", consent="iam") is False  # needs the full word
+    assert prompter.confirm("iam", "Create roles?", consent="iam-bootstrap") is False  # needs the full word
     prompter, _ = console_prompter(["YES"])
-    assert prompter.confirm("iam", "Create roles?", consent="iam") is True
+    assert prompter.confirm("iam", "Create roles?", consent="iam-bootstrap") is True
     assert "iam" not in prompter.record
 
 

@@ -1,48 +1,17 @@
 """Read-only discovery. Every client is a real botocore client behind a Stubber, so each call and response
 is validated against AWS's own service model."""
 
-import boto3
 import pytest
 from botocore.exceptions import EndpointConnectionError, NoCredentialsError
-from botocore.stub import Stubber
 
-from infra import discover
-from infra.discover import DiscoveryError
+from infra.guided import discover
+from infra.guided.discover import DiscoveryError
+from tests.guided_fakes import ACCOUNT, REGION, Fake
 
-REGION, ACCOUNT = "eu-central-1", "123456789012"
 ID1, ID2 = "i-0123456789abcdef0", "i-0fedcba9876543210"
 TG = f"arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:targetgroup/orders/73e2d6bc24d8a067"
 ALB = f"arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:loadbalancer/app/orders-alb/50dc6c495c0c9188"
 NLB = f"arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:loadbalancer/net/orders/bbbbbbbbbbbbbbbb"
-
-
-class Fake:
-    """`clients(service, region)` backed by stubbed clients, one per service."""
-
-    def __init__(self):
-        self.stubs, self.real = {}, {}
-        self.session = boto3.session.Session(
-            aws_access_key_id="synthetic", aws_secret_access_key="synthetic", region_name=REGION
-        )
-
-    def __call__(self, service, region):
-        if service not in self.real:
-            self.real[service] = self.session.client(service)
-            self.stubs[service] = Stubber(self.real[service])
-            self.stubs[service].activate()
-        return self.real[service]
-
-    def on(self, service, method, response, params=None):
-        self(service, REGION)
-        self.stubs[service].add_response(method, response, params)
-
-    def denied(self, service, method, code="AccessDeniedException"):
-        self(service, REGION)
-        self.stubs[service].add_client_error(method, service_error_code=code)
-
-    def done(self):
-        for stub in self.stubs.values():
-            stub.assert_no_pending_responses()
 
 
 @pytest.fixture

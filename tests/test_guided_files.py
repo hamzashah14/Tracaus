@@ -7,7 +7,7 @@ import stat
 
 import pytest
 
-from infra.guided_files import FilesError, build, ecs_id, readiness, validate, write
+from infra.guided.files import FilesError, build, ecs_id, readiness, validate, write
 
 ACCOUNT, REGION = "123456789012", "eu-central-1"
 ROLES = {

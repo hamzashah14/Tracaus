@@ -27,11 +27,13 @@ _REDACTIONS = (
 )
 
 
-def clean(value, limit=200):
-    """One printable line: escape sequences and control characters gone, truncated. Safe for AWS-supplied text."""
+def clean(value, limit=200, collapse=True):
+    """One printable line: escape sequences and control characters gone, truncated. Safe for AWS-supplied text.
+
+    `collapse=False` keeps runs of spaces, for tables the program lays out itself."""
     text = _ESCAPES.sub("", str(value))
     text = _CONTROL.sub(" ", text)
-    text = " ".join(text.split())
+    text = " ".join(text.split()) if collapse else text.rstrip()
     return text if len(text) <= limit else text[: max(limit - 3, 0)] + "..."
 
 
@@ -130,8 +132,13 @@ class Console:
     def say(self, text=""):
         """A plain line, for statements before a change and for summaries."""
         for raw in str(text).split("\n"):
-            print(clean(raw, 400), file=self.stream, flush=True)
-            self._log(clean(raw, 400))
+            line = clean(raw, 400, collapse=False)
+            print(line, file=self.stream, flush=True)
+            self._log(line)
+
+    def secret_line(self, text):
+        """Show a secret once on the terminal. It is cleaned for the terminal but never written to the log."""
+        print(clean(text, 400), file=self.stream, flush=True)
 
     def explain(self, what, cause, safe, next_step):
         """The standard failure block: what failed, why, what is safe, and what to do."""
