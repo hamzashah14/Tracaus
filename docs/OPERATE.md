@@ -95,7 +95,7 @@ before it is published.
 
 One failure often trips several alarms (CPU, nginx errors and the process count) and a flapping alarm can fire again
 and again. Without a guard, every alarm would start its own investigation and send two emails. Tracaus keeps **one open
-incident per instance**:
+incident per target** (an EC2 instance or an ECS service):
 
 - The first alarm for an instance opens an incident, investigates it and starts a window of
   `incident_cooldown_minutes` (default 15, set in `runtime.json`, 0 turns it off, maximum 120).
@@ -103,7 +103,8 @@ incident per instance**:
   incident (`suppressed_alarms` on the incident status page). It starts no investigation and sends no email. The
   window does not extend, so a long outage opens a new incident every 15 minutes at most.
 - If observers are on, the OK transition of a folded alarm still links to the open incident.
-- Never folded: an EC2 `stopped` or `terminated` event always opens its own incident. Only alarms are folded.
+- Folded: alarms, and the task-stop events of an ECS service (a crash loop stops a task every few seconds).
+- Never folded: an EC2 `stopped` or `terminated` event always opens its own incident.
 - A true duplicate of a message (SNS or SQS delivering twice) is dropped, as before, and is not counted.
 
 The trade-off is that a different failure on the same instance inside the window is not investigated on its own.
@@ -114,6 +115,23 @@ would rather have every alarm investigated and pay for it. A planned stop and st
 incident for the stop: pause model work first if that matters (see Maintenance below).
 
 The `Suppressed` metric in the Pipeline namespace counts folded alarms. Not tried on real AWS.
+
+## ECS services
+
+An ECS incident is investigated with `fetch_ecs` (service state, stopped tasks, deployments, load balancer health),
+metrics and the service's log groups. The report's `task_failure` finding must quote a stopped task. A deployment or
+scale-in stop is not an incident, so a normal release does not page you.
+
+- **Reports without log evidence.** If a new task definition revision writes to a different log group, Tracaus
+  keeps reading the old one. Run `python -m infra ecs-discover`, update `existing_log_groups`, and cut a new release.
+- **Deleted or renamed services.** `fetch_ecs` then says the service was not found, and `check` fails for a new
+  release until the inventory is corrected.
+- **Behind an ALB.** `alb5xx` and `unhealthy` alarms exist only when `load_balancer` is set. Changing the target
+  group of a service means updating the file and cutting a new release.
+- **Services you did not list.** The task-stop rule matches your clusters and your service names separately, so with
+  several clusters it can deliver an event for a service you did not list. Tracaus ignores it and counts it in the
+  `Ignored` metric. It does not go to a dead-letter queue.
+- **Not tried on real ECS.** See [SERVERS.md](SERVERS.md#ecs-services) for what is unverified.
 
 ## Check pipeline health
 

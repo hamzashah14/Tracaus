@@ -266,3 +266,50 @@ def test_ingest_maps_the_service_from_its_environment(monkeypatch):
     }
     assert pipeline.ingest({"Records": [record]}) == {"batchItemFailures": []}
     assert [e["instance_id"] for e in accepted] == ["ecs-orders"]
+
+
+def ingest_env(monkeypatch):
+    for key, value in {
+        "ALLOWED_INSTANCE_IDS": ",".join(sorted(ALLOWED)),
+        "ALARMS_TOPIC_ARN": TOPIC,
+        "EXPECTED_ACCOUNT_ID": ACCOUNT,
+        "MONITOR_REGION": REGION,
+        "ALARM_NAME_PREFIX": "tracaus-staging-",
+        "INCIDENT_RETENTION_DAYS": "30",
+        "ECS_TARGETS": json.dumps(ECS),
+    }.items():
+        monkeypatch.setenv(key, value)
+    store = MagicMock()
+    monkeypatch.setattr(pipeline, "ledger", lambda: store)
+    return store
+
+
+def sqs(body):
+    return {"messageId": "m", "body": body, "attributes": {"SentTimestamp": str(int(time.time() * 1000))}}
+
+
+def test_a_genuine_event_for_an_unlisted_service_is_out_of_inventory_not_poison():
+    from tracaus.incident import OutOfInventory
+
+    for change in ({"detail": {"clusterArn": OTHER_CLUSTER}}, {"detail": {"group": "service:unlisted"}}):
+        with pytest.raises(OutOfInventory):
+            normalize(stopped(**change))
+    with pytest.raises(InvalidEvent) as error:
+        normalize(stopped(account="999999999999"))
+    assert not isinstance(error.value, OutOfInventory)  # a wrong account stays poison
+
+
+def test_ingest_ignores_unlisted_services_instead_of_retrying_them_into_the_dead_letter_queue(monkeypatch):
+    store = ingest_env(monkeypatch)
+    # The rule matches the cluster list and the service list separately, so these reach the ingress legitimately.
+    unlisted = stopped(detail={"clusterArn": OTHER_CLUSTER})
+    result = pipeline.ingest({"Records": [sqs(envelope(unlisted))]})
+    assert result == {"batchItemFailures": []}
+    store.accept.assert_not_called()
+
+
+def test_ingest_still_fails_poison_payloads(monkeypatch):
+    store = ingest_env(monkeypatch)
+    result = pipeline.ingest({"Records": [sqs(envelope(stopped(account="999999999999")))]})
+    assert result == {"batchItemFailures": [{"itemIdentifier": "m"}]}
+    store.accept.assert_not_called()

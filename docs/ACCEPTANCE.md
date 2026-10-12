@@ -30,6 +30,21 @@ enabled that option.
   How: compare the rendered `coverage.json` with your real hosts. The strict coverage check also runs inside the paid
   canary ([DEPLOY.md](DEPLOY.md)).
 
+## ECS services (only with `ecs_services`)
+
+- [ ] **A crash is detected, folded and explained.** Stopping a task by making its essential container exit (or an
+  out-of-memory kill), then letting the service restart it a few times, opens one incident, mails once, and the
+  report's `task_failure` finding quotes the stopped task's stop code and exit code.
+  How: on a staging service, run a container that exits, then check the incident, `suppressed_alarms` and the report.
+- [ ] **A deployment is quiet.** A normal rolling deployment and a scale-in open no incident.
+  How: deploy a new task definition revision and change the desired count, then check that no incident appears.
+- [ ] **A failed health check is an incident.** Break the health check path of a service behind an ALB: targets turn
+  unhealthy, the `unhealthy` alarm fires, and the report shows the target's health reason.
+- [ ] **Log evidence and the ALB answer match reality.** `ecs-discover` agrees with `deployment.json`, and the
+  report cites lines from the service's log group.
+- [ ] **No secrets leave the task definition.** Put a marker value in a task definition environment variable and
+  check that it appears in no stored evidence or email.
+
 ## Notification delivery
 
 - [ ] **Primary inbox.** Initial and follow-up emails reach the real mailbox, and the incident link opens the UI

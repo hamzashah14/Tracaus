@@ -80,9 +80,13 @@ def discover(spec, clients):
             suggestion["load_balancer"] = {"load_balancer_arn": lb, "target_group_arn": tg}
             if len(usable) > 1:
                 notes.append("The service is attached to several ALB target groups; the first is suggested.")
-        elif attached:
+        elif attached and any(others for _, others in balancers.values()):
             notes.append(
                 "The service is behind a load balancer that is not an ALB; only ALBs are supported, use null."
+            )
+        elif attached:
+            notes.append(
+                "The service's target group is not attached to any load balancer yet, so there is no ALB to monitor."
             )
         else:
             notes.append("No load balancer is attached to the service: load_balancer is null.")

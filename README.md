@@ -3,15 +3,16 @@
   <img alt="Tracaus" src="assets/tracaus-logo-black.png" width="240">
 </picture>
 
-# Tracaus: an AIOps assistant for your EC2 servers
+# Tracaus: an AIOps assistant for your EC2 and ECS workloads
 
 When a CloudWatch alarm fires, Tracaus reads the logs and metrics of the affected
-server, asks an AI model (Amazon Bedrock by default) to reason over that evidence,
+server or service, asks an AI model (Amazon Bedrock by default) to reason over that evidence,
 and writes a short report that separates what was observed from what is only a
 guess. You get the alert first and a link to the report when it is ready. You can
 also ask questions in a web chat. You run all of it in your own AWS account.
 
-- **Read-only.** Its tools only read CloudWatch logs and metrics for the EC2 instances you list.
+- **Read-only.** Its tools only read CloudWatch logs and metrics for the EC2 instances and ECS services you list, and, for an ECS service, its state (deployments, stopped tasks, load balancer health).
+- **EC2 and ECS.** List EC2 instances, ECS services (Fargate or EC2 launch type), or both. For ECS, Tracaus reads where ECS sends things by default: `awslogs` log groups, `AWS/ECS` and load balancer metrics, and EventBridge task events. See [SERVERS.md](docs/SERVERS.md#ecs-services).
 - **No automatic fixes.** Tracaus suggests; a person decides and acts.
 - **Your account.** Everything is deployed and operated by you, in your AWS regions.
 - **You pay for what you use.** AWS bills Bedrock, CloudWatch, Lambda and the other services to you. A Model API provider, if you pick one, bills you separately.
@@ -103,7 +104,7 @@ layout of the agent file in [SERVERS.md](docs/SERVERS.md), and the groups you li
 `existing_log_groups` ([SERVERS.md](docs/SERVERS.md#use-log-groups-that-already-exist)). Any other
 group, such as `/aws/lambda/...`, is out of reach. The UI process holds your read credentials, so Tracaus's checks run in code and
 IAM does not back them up. Keep the UI on `127.0.0.1`. Use the deployed tools for anything
-shared or production. This mode has never run against real AWS either.
+shared or production. This mode has never run against real AWS either, and it covers EC2 instances only.
 
 ## Deploy to your AWS account
 
@@ -182,7 +183,8 @@ against it first. An OpenAI-compatible endpoint has no token-count call, so Trac
 reserves a local estimate that is not an upper bound. It stops the run if the provider
 reports more input than estimated, or no usage.
 
-**What is not supported yet?** Automatic server discovery (you list instances),
+**What is not supported yet?** Automatic discovery (you list instances and ECS services), EKS,
+Network and Gateway load balancers in front of ECS,
 health probes of private VPC-only endpoints, a desktop app, Windows servers (the
 telemetry setup is for Linux EC2) and a Model API with AgentCore.
 

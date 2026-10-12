@@ -12,7 +12,7 @@ import boto3
 from botocore.config import Config
 
 from tracaus import safety
-from tracaus.incident import InvalidEvent, normalize_sns
+from tracaus.incident import InvalidEvent, OutOfInventory, normalize_sns
 from tracaus.ledger import MAX_ATTEMPTS, Ledger
 from tracaus.telemetry import emit
 from tracaus.time import iso_utc, parse_utc
@@ -80,6 +80,11 @@ def ingest(event, context=None):
             if source.get("sns_timestamp"):
                 sent = min(sent, parse_utc(source["sns_timestamp"]))
             source["received_at"] = iso_utc(sent)
+        except OutOfInventory:
+            emit(
+                "ingress", "IGNORED", metrics={"Ignored": 1}
+            )  # expected, not poison: do not retry it into the DLQ
+            return
         except InvalidEvent:
             # Poison payload remains in the queue until its redrive DLQ. It is never
             # logged or silently acknowledged as an accepted incident.

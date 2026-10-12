@@ -163,8 +163,15 @@ with the configured CI/operator role credentials" otherwise.
 | Model (Bedrock, the default) | `model_id` and `model_arns` (1 to 10 ARNs of a foundation model or inference profile; a profile must belong to your account, and every model behind a profile must also be listed). If `model_id` is an ARN it must be in `model_arns`. To use a model API instead, see section 8: it replaces these fields |
 | Switches | `maintenance_mode`: keep `false` (true disables routing). `reserved_concurrency`: leave `null`. 0 needs `maintenance_mode`, and the value is only used for a headroom check |
 | Retention | `log_retention_days`: 7, 14, 30, 60, 90, 180 or 365. `log_segment`: empty, or up to 24 letters, digits, `_` or `-`, added to log group names |
-| Servers | `instances`: 1 to 10. Each needs `id` (`i-` plus 8 or 17 hex digits), `log_groups` (up to 8 names of up to 40 letters, digits, `_` or `-`, which Tracaus creates), `disk_path` (absolute path such as `/`), `resource_alarms`, `nginx_alarm`, `process_exe` (`null` or an executable name). Optional: `existing_log_groups`, up to 8 log groups that already exist and that Tracaus only reads (see [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist)), and `log_files`, up to 16 files the generated agent file ships (see [SERVERS.md](SERVERS.md#step-1-install-the-cloudwatch-agent)). Each instance needs at least one group of either kind |
-| Nginx | `nginx_filters.access` and `.error`, each with `pattern`, `match` (a sample line that must match) and `miss` (one that must not). Required even if no instance uses Nginx. See [SERVERS.md](SERVERS.md) |
+| Servers | `instances`: 0 to 10 (at most 10 targets with `ecs_services`, and at least one target). Each needs `id` (`i-` plus 8 or 17 hex digits), `log_groups` (up to 8 names of up to 40 letters, digits, `_` or `-`, which Tracaus creates), `disk_path` (absolute path such as `/`), `resource_alarms`, `nginx_alarm`, `process_exe` (`null` or an executable name). Optional: `existing_log_groups`, up to 8 log groups that already exist and that Tracaus only reads (see [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist)), and `log_files`, up to 16 files the generated agent file ships (see [SERVERS.md](SERVERS.md#step-1-install-the-cloudwatch-agent)). Each instance needs at least one group of either kind |
+| ECS services | `ecs_services` (optional, up to 10): each has `id` (`ecs-` plus up to 24 letters, digits or `_`), `cluster`, `service`, `load_balancer` (**required**: `null`, or the ALB and target group ARNs) and optionally `existing_log_groups`, `resource_alarms`, `container_insights`. Find the values with `python -m infra ecs-discover`. See [SERVERS.md](SERVERS.md#ecs-services) |
+| Nginx | `nginx_filters.access` and `.error`, each with `pattern`, `match` (a sample line that must match) and `miss` (one that must not). Required only when an instance has `nginx_alarm: true`. See [SERVERS.md](SERVERS.md) |
+
+**ECS services.** Put each service's `id`, `cluster` and `service` in `deployment.json` (keep
+`"instances": []` if you have no EC2 instances), run `python -m infra ecs-discover --spec .local/customer/deployment.json`
+and paste the `existing_log_groups` and `load_balancer` it prints. `check` then confirms every service exists, is
+ACTIVE and uses the ALB you declared. An ECS deployment gets a third tool Lambda (`fetch_ecs`) and an `ecs-down`
+EventBridge rule. Nothing about ECS has run against real AWS.
 
 The telemetry must match the inventory exactly: instance IDs, log groups, metric dimensions
 (`InstanceId`, disk `path`, process `exe`). The generated agent examples help, but installing
@@ -630,6 +637,8 @@ Rules:
   that is over 256 KiB.
 - If your provider does not send the `amr` claim, set `require_mfa = false` and enforce MFA at the
   provider.
+
+Each entry in `instances` may be an EC2 instance ID or an ECS service label such as `ecs-orders`.
 
 Ask your provider's admin tools for each person's immutable `sub`. Do not type an email address.
 

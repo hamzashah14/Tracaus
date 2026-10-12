@@ -349,3 +349,13 @@ def test_discovery_output_is_pasteable():
     )
     text = ecs_discover.render(found)
     assert '"existing_log_groups": [' in text and '"load_balancer": {' in text and LB in text
+
+
+def test_discovery_explains_a_target_group_with_no_load_balancer_yet():
+    found = discovery(
+        draft(entry()),
+        {"orders-api": [service("orders-api", groups=[TG])]},
+        task_definition(("web", awslogs("/ecs/orders"))),
+        [(TG, [])],
+    )[0]
+    assert found["load_balancer"] is None and "not attached to any load balancer" in found["notes"][0]

@@ -106,14 +106,19 @@ def stopped_tasks(client, cluster, name, start, end):
         "taskArns"
     ]
     tasks = client.describe_tasks(cluster=cluster, tasks=arns)["tasks"] if arns else []
-    inside = [t for t in tasks if t.get("stoppedAt") and start <= t["stoppedAt"] <= end]
-    inside.sort(key=lambda t: t["stoppedAt"], reverse=True)
+    # A STOPPED task with no stop time is shown with a null time rather than dropped: it is still evidence.
+    inside = [
+        t
+        for t in tasks
+        if (start <= t["stoppedAt"] <= end if t.get("stoppedAt") else t.get("lastStatus") == "STOPPED")
+    ]
+    inside.sort(key=lambda t: t.get("stoppedAt") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     return [
         {
             "task": short(t["taskArn"]),
             "stop_code": t.get("stopCode"),
             "stopped_reason": clip(t.get("stoppedReason")),
-            "stopped_at": stamp(t["stoppedAt"]),
+            "stopped_at": stamp(t.get("stoppedAt")),
             "task_definition": short(t["taskDefinitionArn"]) if t.get("taskDefinitionArn") else None,
             "containers": [
                 {"name": c.get("name", ""), "exit_code": c.get("exitCode"), "reason": clip(c.get("reason"))}

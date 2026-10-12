@@ -38,6 +38,11 @@ class InvalidEvent(ValueError):
     pass
 
 
+class OutOfInventory(InvalidEvent):
+    """A genuine event for something this deployment does not list. The EventBridge rule matches a list of clusters
+    and a list of services separately, so some such events are expected. They are ignored, not retried."""
+
+
 def event_identity(source, native_id, *transition):
     value = json.dumps([source, native_id, *transition], separators=(",", ":"))
     return hashlib.sha256(value.encode()).hexdigest()
@@ -158,6 +163,8 @@ def normalize_sns(
             ),
             None,
         )
+        if iid is None:
+            raise OutOfInventory("Source service is outside deployment inventory")
         state = detail.get("lastStatus")
         if state not in ECS_STATES:
             raise InvalidEvent("Unknown ECS transition")

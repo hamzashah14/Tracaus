@@ -24,6 +24,7 @@ METRICS = {
     "Accepted",
     "Duplicate",
     "Suppressed",
+    "Ignored",
     "Failure",
     "QueueDelaySeconds",
     "Attempt",

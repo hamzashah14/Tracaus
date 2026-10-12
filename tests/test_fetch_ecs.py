@@ -402,3 +402,16 @@ def test_the_schema_is_the_contract_the_runtime_enforces(scope):
     with pytest.raises(Exception):
         contract(result)
     assert (ROOT / "schemas/fetch_ecs.json").exists()
+
+
+def test_a_stopped_task_without_a_stop_time_is_kept_and_one_still_running_is_not(scope):
+    unknown = stopped(minutes=-1)
+    del unknown["stoppedAt"]
+    unknown["lastStatus"] = "STOPPED"
+    stopping = stopped(minutes=-1)
+    del stopping["stoppedAt"]
+    stopping["lastStatus"] = "DEPROVISIONING"
+    stopping["taskArn"] = stopping["taskArn"][:-1] + "z"
+    result = run(stubs(service(), [unknown, stopping], health()))
+    contract(result)
+    assert [(t["task"], t["stopped_at"]) for t in result["stopped_tasks"]] == [("a" * 32, None)]

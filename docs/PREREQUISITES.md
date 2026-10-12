@@ -28,7 +28,7 @@ optional add-on of three Lambda functions that probe your services and send test
   Model API key secret that you created (2.4, 8).
 - [ ] **Three IAM roles exist** (operator, CloudFormation execution, UI workload) and you have an AWS
   profile that is a session of the operator role. No access keys in any file (section 3).
-- [ ] **1 to 10 Linux EC2 instances** in the monitor region, publishing the metrics and logs Tracaus
+- [ ] **1 to 10 targets: Linux EC2 instances and/or ECS services** in the monitor region. EC2 instances publish the metrics and logs Tracaus
   expects (section 4).
 - [ ] **One to five alert addresses** and a fixed HTTPS status URL for alert links (6.1).
 - [ ] **A workstation:** Python 3.12, Git, a clean committed checkout and the locked installs
@@ -92,6 +92,7 @@ functions add `RELEASE_ID`. Buckets add the account ID and region. Names must st
 | Bedrock | Model calls: `bedrock:InvokeModel` and `bedrock:CountTokens` on your `model_arns` | Required unless Model API |
 | Bedrock AgentCore | A runtime and endpoint per release | Optional |
 | EC2 | Nothing is created. Tracaus only reads your instances and their state events | Existing |
+| ECS and Elastic Load Balancing | Nothing is created. Tracaus only reads your services, their tasks and task definitions, and the health of an ALB's targets | Existing, only with `ecs_services` |
 
 ### 2.3 Quotas and limits to check
 
@@ -270,6 +271,8 @@ is missing.
 | Readiness routes (observers only) | Public HTTPS on port 443, with a path. No credentials, query or redirect. Private VPC-only endpoints are not supported |
 | Time and network | Synchronized clocks (UTC), a rotated heartbeat file, and a path from the agent to CloudWatch in the monitor region (not verified here; see AWS's agent documentation) |
 
+**ECS services.** Existing services in the monitor region, listed by hand (see [SERVERS.md](SERVERS.md#ecs-services)). Each must be ACTIVE, with its tasks writing to CloudWatch Logs through `awslogs` if you want log evidence. Metrics need no setup: `AWS/ECS` and `AWS/ApplicationELB` are published by default. Container Insights is opt-in and only needed for the running-task alarm. The operator role needs `ecs:DescribeServices`, `ecs:DescribeTaskDefinition` and `elasticloadbalancing:DescribeTargetGroups` for `check` and `ecs-discover` (`bootstrap-iam` adds them when `ecs_services` is set). Not verified on real ECS.
+
 **Log group creation.** Tracaus's stack creates the groups in `log_groups`, and the tool never adopts a resource that
 already exists. Groups in `existing_log_groups` are only read, never created or adopted. Not verified: an agent that starts before `apply` and is allowed to create log groups
 could create them first and block the stack. To be safe, withhold that permission from the instance
@@ -342,7 +345,8 @@ appear after a test request. The coverage check inside the canary enforces all o
 | `notification_email` or `notification_emails` | one of the two | One address, or a list of 1 to 5 distinct addresses. Not both | Mailboxes you own |
 | `log_retention_days` | yes | 7, 14, 30, 60, 90, 180 or 365 | Your retention decision |
 | `ui_principal_arn`, `ci_principal_arn`, `deployment_role_arn` | yes | Role ARNs in `account_id`, all different | `aws iam get-role --role-name NAME`: copy `Arn`, path included |
-| `instances` | yes | 1 to 10 unique objects with the six fields below | EC2 console |
+| `instances` | yes | 0 to 10 unique objects with the six fields below (`[]` for an ECS-only deployment; at most 10 targets with `ecs_services`) | EC2 console |
+| `ecs_services` | no | Up to 10 objects: `id` (`ecs-` plus 1 to 24 lowercase letters, digits or `_`), `cluster`, `service`, `load_balancer` (required: `null` or `load_balancer_arn` and `target_group_arn` of an Application Load Balancer), optional `existing_log_groups` (up to 8), `resource_alarms`, `container_insights` | The ECS console, or `python -m infra ecs-discover` |
 | `instances[].id` | yes | `i-` plus 8 or 17 lowercase hex digits | EC2 console |
 | `instances[].log_groups` | yes | 0 to 8 unique names of 1 to 40 letters, digits, `_` or `-`. May be empty if `existing_log_groups` is set | Your choice. Tracaus creates these groups and the agent writes the same names |
 | `instances[].existing_log_groups` | no | Up to 8 objects. `name`: 1 to 512 letters, digits, `_`, `.`, `/`, `#` or `-`, a group that already exists in the monitor region, not under Tracaus's own log prefix. `streams` (optional): `instance` (default) or `all` | `aws logs describe-log-groups`. Tracaus reads these groups and never creates or changes them. See [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist) |
@@ -350,7 +354,7 @@ appear after a test request. The coverage check inside the canary enforces all o
 | `instances[].disk_path` | yes | Absolute path of letters, digits, `/`, `_`, `-` | The mount point to alarm on |
 | `instances[].resource_alarms`, `nginx_alarm` | yes | Boolean each | Your choice |
 | `instances[].process_exe` | yes | `null`, or 1 to 40 characters of letters, digits, `_`, `.`, `-` | The executable name to count |
-| `nginx_filters` | yes | `access` and `error`, each with `pattern`, `match`, `miss` (1 to 2048 characters). Required even without Nginx | Section 4 |
+| `nginx_filters` | only with `nginx_alarm` | `access` and `error`, each with `pattern`, `match`, `miss` (1 to 2048 characters) | Section 4 |
 | `log_segment` | yes | `""`, or up to 24 letters, digits, `_` or `-` | Your choice |
 | `reference_only` | yes | Boolean. `false` for a real deployment | Keep `true` until values are real |
 | `observability` | no | Object, below. Leave it out unless you want observers | Section 4 |
