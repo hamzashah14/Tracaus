@@ -20,10 +20,10 @@ from infra.guided.prompt import (
     ConsolePrompter,
     NeedsAnswer,
     Refused,
-    ScriptedPrompter,
     YesPrompter,
 )
 from infra.spec import ROOT
+from tests.guided_fakes import ScriptedPrompter
 
 ACCOUNT, REGION = "123456789012", "eu-central-1"
 UI_ROLE = f"arn:aws:iam::{ACCOUNT}:role/tracaus/staging/ui-abc"

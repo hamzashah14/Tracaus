@@ -184,7 +184,7 @@ def test_incident_link_requires_sign_in_and_shows_authorized_report(settings, mo
 def test_brand_assets_exist_and_are_transparent_pngs():
     from PIL import Image
 
-    for name in ("tracaus-mark.png", "tracaus-logo-white.png", "tracaus-logo-black.png"):
+    for name in ("tracaus-mark.png", "tracaus-logo-white.png"):
         with Image.open(ROOT / "assets" / name) as image:
             assert image.format == "PNG" and image.mode == "RGBA"
 

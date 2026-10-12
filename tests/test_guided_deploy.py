@@ -10,8 +10,8 @@ import pytest
 from infra.guided.common import GuidedError
 from infra.guided.console import Console
 from infra.guided.deploy import READY, Deploy, DeployOptions, status
-from infra.guided.prompt import Refused, ScriptedPrompter
-from tests.guided_fakes import Fake
+from infra.guided.prompt import Refused
+from tests.guided_fakes import Fake, ScriptedPrompter
 
 HASH = "ab" * 32
 STAGES = ["foundation-tools", "durable-foundation", "routing"]

@@ -40,16 +40,6 @@ def _int_param(params, name, default, lo, hi):
     return max(lo, min(hi, value))
 
 
-def _match(params, name, pattern, what, default=None):
-    raw = params.get(name)
-    if raw in (None, ""):
-        return default
-    raw = str(raw).strip()
-    if not pattern.match(raw):
-        raise BadInput(f"{name} {raw!r} is not a valid {what}.")
-    return raw
-
-
 def resolve_window(params, now):
     raw_time = params.get("time_string")
     if raw_time:

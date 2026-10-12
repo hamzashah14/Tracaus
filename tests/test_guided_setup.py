@@ -9,10 +9,10 @@ import pytest
 
 from infra.guided.common import GuidedError
 from infra.guided.console import Console
-from infra.guided.prompt import AnswersPrompter, NeedsAnswer, Refused, ScriptedPrompter
+from infra.guided.prompt import AnswersPrompter, NeedsAnswer, Refused
 from infra.guided.roles import OWNER_TAG
 from infra.guided.setup import Options, Setup
-from tests.guided_fakes import ACCOUNT, REGION, Fake
+from tests.guided_fakes import ACCOUNT, REGION, Fake, ScriptedPrompter
 
 ID1 = "i-0123456789abcdef0"
 LB = f"arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:loadbalancer/app/orders-alb/50dc6c495c0c9188"

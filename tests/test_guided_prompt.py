@@ -11,7 +11,6 @@ from infra.guided.prompt import (
     ConsolePrompter,
     NeedsAnswer,
     Refused,
-    ScriptedPrompter,
     YesPrompter,
     valid_email,
     valid_profile,
@@ -19,6 +18,7 @@ from infra.guided.prompt import (
     valid_region,
     valid_url,
 )
+from tests.guided_fakes import ScriptedPrompter
 
 
 class Tty(io.StringIO):

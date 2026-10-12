@@ -11,10 +11,9 @@ import pytest
 from infra.guided.common import run as real_run
 from infra.guided.console import Console
 from infra.guided.deploy import Deploy, DeployOptions
-from infra.guided.prompt import ScriptedPrompter
 from infra.guided.setup import Options, Setup
 from infra.spec import ROOT
-from tests.guided_fakes import Fake
+from tests.guided_fakes import Fake, ScriptedPrompter
 from tests.test_guided_setup import ANSWERS, ID1, ROLE_ARNS, operator_identity, prime
 
 

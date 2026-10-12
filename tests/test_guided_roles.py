@@ -11,7 +11,6 @@ from botocore.stub import ANY
 
 from infra.guided import roles as guided_roles
 from infra.guided.console import Console
-from infra.guided.prompt import ScriptedPrompter
 from infra.guided.roles import (
     OWNER_TAG,
     RolesError,
@@ -26,7 +25,7 @@ from infra.guided.roles import (
     write_profiles,
 )
 from infra.spec import ROOT, load
-from tests.guided_fakes import ACCOUNT, REGION, Fake
+from tests.guided_fakes import ACCOUNT, REGION, Fake, ScriptedPrompter
 
 ARNS = role_arns("tracaus", "staging", ACCOUNT)
 STACK = "tracaus-staging-iam"
