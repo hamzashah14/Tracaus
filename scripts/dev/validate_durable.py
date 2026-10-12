@@ -98,35 +98,41 @@ def examples(spec, config, *, include_bindings=False):
     return (result, bindings, artifacts, versions) if include_bindings else result
 
 
-def main():
-    config = json.loads((ROOT / "examples/durable.example.json").read_text())
-    with tempfile.TemporaryDirectory(prefix="tracaus-durable-") as temp:
+def lint(rendered):
+    """cfn-lint every `{file name: template}` offline, failing on warnings. Returns how many were checked."""
+    with tempfile.TemporaryDirectory(prefix="tracaus-cfn-") as temp:
         files = []
-        for example in ("deployment", "ecs"):  # EC2 instances, then ECS services
-            spec = load(ROOT / f"examples/{example}.example.json")
-            for mode in ("same", "split"):
-                if mode == "split":
-                    spec = {**spec, "bedrock_region": "us-east-1"}
-                for target in ("standalone", "agentcore"):
-                    for stage, value in examples(spec, {**config, "runtime_target": target}).items():
-                        path = Path(temp) / f"{example}-{mode}-{target}-{stage}.json"
-                        path.write_text(json.dumps(value))
-                        files.append(str(path))
-                api = {
-                    **{k: v for k, v in spec.items() if k != "model_arns"},
-                    "model_provider": "model_api",
-                    "model_id": "provider-model",
-                    "model_api": {"protocol": "openai", "base_url": "https://api.example.com/v1"},
-                }
-                for stage, value in examples(api, {**config, "runtime_target": "standalone"}).items():
-                    path = Path(temp) / f"{example}-{mode}-model-api-{stage}.json"
-                    path.write_text(json.dumps(value))
-                    files.append(str(path))
+        for file_name, template in rendered.items():
+            path = Path(temp) / file_name
+            path.write_text(json.dumps(template))
+            files.append(str(path))
         subprocess.run(
             [str(Path(sys.executable).parent / "cfn-lint"), "--non-zero-exit-code", "warning", "-t", *files],
             check=True,
         )
-    print(f"PASS: {len(files)} standalone/AgentCore/model-API same/split-region templates")
+    return len(files)
+
+
+def main():
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    rendered = {}
+    for example in ("deployment", "ecs"):  # EC2 instances, then ECS services
+        spec = load(ROOT / f"examples/{example}.example.json")
+        for mode in ("same", "split"):
+            if mode == "split":
+                spec = {**spec, "bedrock_region": "us-east-1"}
+            for target in ("standalone", "agentcore"):
+                for stage, value in examples(spec, {**config, "runtime_target": target}).items():
+                    rendered[f"{example}-{mode}-{target}-{stage}.json"] = value
+            api = {
+                **{k: v for k, v in spec.items() if k != "model_arns"},
+                "model_provider": "model_api",
+                "model_id": "provider-model",
+                "model_api": {"protocol": "openai", "base_url": "https://api.example.com/v1"},
+            }
+            for stage, value in examples(api, {**config, "runtime_target": "standalone"}).items():
+                rendered[f"{example}-{mode}-model-api-{stage}.json"] = value
+    print(f"PASS: {lint(rendered)} standalone/AgentCore/model-API same/split-region templates")
 
 
 if __name__ == "__main__":
