@@ -7,9 +7,9 @@ from botocore.exceptions import ClientError
 from openapi_schema_validator import OAS30Validator
 from openapi_spec_validator import validate
 
-from argus.metrics import resolve, validate_catalog
-from argus.transport import bounded_envelope, dumps
 from tests.helpers import ROOT, body, load_lambda
+from tracaus.metrics import resolve, validate_catalog
+from tracaus.transport import bounded_envelope, dumps
 
 IID = "i-0123456789abcdef0"
 metrics = load_lambda("fetch_metrics")

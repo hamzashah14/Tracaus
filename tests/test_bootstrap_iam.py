@@ -127,10 +127,10 @@ def test_no_role_is_an_administrator_and_dangerous_grants_are_absent():
                 assert not any(a.startswith(("s3:*", "iam:", "sts:")) for a in actions), name
     execution = by_role["customer-cfn-deployment"]
     for action in ("iam:AttachRolePolicy", "iam:CreateUser", "iam:CreateAccessKey", "sts:AssumeRole"):
-        assert not allowed(execution, action, "arn:aws:iam::123456789012:role/argus/staging/x", {})
+        assert not allowed(execution, action, "arn:aws:iam::123456789012:role/tracaus/staging/x", {})
     operator = by_role["customer-ci"]
     for action in ("iam:CreateRole", "iam:PutRolePolicy", "s3:DeleteObject", "lambda:CreateFunction"):
-        assert not allowed(operator, action, "arn:aws:iam::123456789012:role/argus/staging/x", {})
+        assert not allowed(operator, action, "arn:aws:iam::123456789012:role/tracaus/staging/x", {})
     # Roles outside the project path and resources outside the name prefix stay out of reach.
     assert not allowed(execution, "iam:CreateRole", "arn:aws:iam::123456789012:role/other/staging/x", {})
     assert not allowed(execution, "s3:CreateBucket", "arn:aws:s3:::unrelated-bucket", {})
@@ -138,18 +138,18 @@ def test_no_role_is_an_administrator_and_dangerous_grants_are_absent():
         execution, "lambda:CreateFunction", "arn:aws:lambda:eu-central-1:123456789012:function:other", {}
     )
     # PassRole needs the matching service.
-    role = "arn:aws:iam::123456789012:role/argus/staging/x"
+    role = "arn:aws:iam::123456789012:role/tracaus/staging/x"
     assert allowed(execution, "iam:PassRole", role, {"iam:PassedToService": "lambda.amazonaws.com"})
     assert not allowed(execution, "iam:PassRole", role, {"iam:PassedToService": "ec2.amazonaws.com"})
     assert not allowed(execution, "iam:PassRole", role, {})
 
 
-def test_ui_principal_may_only_assume_argus_generated_role():
+def test_ui_principal_may_only_assume_tracaus_generated_role():
     statements = policies(bootstrap_iam.render(SPEC))["customer-ui"]
-    assert allowed(statements, "sts:AssumeRole", "arn:aws:iam::123456789012:role/argus/staging/Ui-1", {})
+    assert allowed(statements, "sts:AssumeRole", "arn:aws:iam::123456789012:role/tracaus/staging/Ui-1", {})
     assert not allowed(statements, "sts:AssumeRole", "arn:aws:iam::123456789012:role/customer-ci", {})
     assert not allowed(
-        statements, "s3:GetObject", "arn:aws:s3:::argus-staging-123456789012-eu-central-1-monitor/x", {}
+        statements, "s3:GetObject", "arn:aws:s3:::tracaus-staging-123456789012-eu-central-1-monitor/x", {}
     )
 
 
@@ -160,7 +160,7 @@ def test_instance_role_is_optional_and_cannot_create_log_groups():
     assert role["ManagedPolicyArns"] == ["arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"]
     deny = role["Policies"][0]["PolicyDocument"]["Statement"][0]
     assert deny["Effect"] == "Deny" and deny["Action"] == ["logs:CreateLogGroup"]
-    assert deny["Resource"] == ["arn:aws:logs:*:123456789012:log-group:/argus/staging/*"]
+    assert deny["Resource"] == ["arn:aws:logs:*:123456789012:log-group:/tracaus/staging/*"]
     assert template["Resources"]["InstanceProfile"]["Properties"]["Roles"] == [{"Ref": "InstanceRole"}]
     assert template["Outputs"]["InstanceProfileName"]["Value"] == {"Ref": "InstanceProfile"}
 
@@ -199,7 +199,7 @@ def test_cli_writes_the_template_and_prints_the_deploy_command(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(output.read_text())["Resources"]["InstanceRole"]
-    assert "CAPABILITY_NAMED_IAM" in result.stdout and "argus-staging-iam" in result.stdout
+    assert "CAPABILITY_NAMED_IAM" in result.stdout and "tracaus-staging-iam" in result.stdout
 
 
 def test_cli_refuses_an_invalid_spec_without_echoing_values(tmp_path):

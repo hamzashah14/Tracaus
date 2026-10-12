@@ -1,6 +1,6 @@
 """Customer-owned observation observation entrypoint."""
 
-from argus.observability import recipient
+from tracaus.observability import recipient
 
 
 def lambda_handler(event, context):

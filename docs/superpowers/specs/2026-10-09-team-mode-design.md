@@ -4,11 +4,11 @@ Status: draft for review. Nothing in this document is implemented yet.
 
 ## 1. Purpose and scope
 
-Argus's current architecture stays as it is: the deployment automation, the
+Tracaus's current architecture stays as it is: the deployment automation, the
 durable incident pipeline, the observers, the optional AgentCore runtime, the
 Model API provider and local tools mode. This change touches one thing only.
 
-Today, letting several people use a shared Argus UI requires the optional
+Today, letting several people use a shared Tracaus UI requires the optional
 identity module: OIDC with MFA checks, signed session tickets, a DynamoDB
 identity table, a Secrets Manager signing key, a session-issuer role, a
 dedicated chat-gateway Lambda, per-user and global quotas, a CloudTrail audit
@@ -24,7 +24,7 @@ This design replaces that module with a much smaller **team mode**:
 
 ### Success criteria
 
-1. A team can share one hosted Argus UI with per-person sign-in, per-person
+1. A team can share one hosted Tracaus UI with per-person sign-in, per-person
    instance access and a per-request audit line, with no AWS resources beyond
    the ones the default deployment already creates.
 2. Default (local single-user) mode and the rest of the architecture behave
@@ -53,12 +53,12 @@ This design replaces that module with a much smaller **team mode**:
 
 ## 3. What the identity module is today
 
-Files that go away: `argus/identity.py` (383 lines), `argus/quotas.py` (114),
-`argus/chat_gateway.py` (69), `infra/identity.py` (286), `infra/identity_ops.py`
+Files that go away: `tracaus/identity.py` (383 lines), `tracaus/quotas.py` (114),
+`tracaus/chat_gateway.py` (69), `infra/identity.py` (286), `infra/identity_ops.py`
 (211), `infra/evidence_audit.py` (189), `infra/chat.py` (80),
 `scripts/dev/validate_identity.py` and `examples/identity.example.json`.
-The identity branches also come out of `argus/config.py`, `argus/execution.py`,
-`argus/chat.py`, `argus/status.py`, `app.py`, `infra/automation.py`,
+The identity branches also come out of `tracaus/config.py`, `tracaus/execution.py`,
+`tracaus/chat.py`, `tracaus/status.py`, `app.py`, `infra/automation.py`,
 `infra/durable*.py`, `infra/owned_*.py`, `infra/deployment_preflight.py` and
 `scripts/run_customer_ui.py`. Tests are about 1,300 lines (`test_identity.py`,
 `test_identity_ops.py`, `test_identity_wiring.py` and the identity parts of
@@ -71,7 +71,7 @@ gateway function and role, a CloudTrail trail and an audit bucket.
 
 Things that look related but stay, verified in the code:
 
-- `argus/governance.py` (`Erasure`) erases incident evidence (incident rows and
+- `tracaus/governance.py` (`Erasure`) erases incident evidence (incident rows and
   stored report versions), not identity data. It backs the `erase-plan` and
   `erase-apply` commands, which stay.
 - `infra/security_ops.py` keeps `erase-plan`, `erase-apply`, `recipients-plan`
@@ -80,15 +80,15 @@ Things that look related but stay, verified in the code:
   moves into `infra/durable_ops.py`. The reference-only and binding check in
   `identity_ops.guard` is also used by the recipient and erase commands, so a
   local copy moves into `security_ops.py`.
-- `argus/work_policy.py` is trimmed, not deleted: the diagnostics evaluation
+- `tracaus/work_policy.py` is trimmed, not deleted: the diagnostics evaluation
   script still reads its chat limits.
-- `argus/safety.py` keeps its redaction vocabulary.
+- `tracaus/safety.py` keeps its redaction vocabulary.
 
 ## 4. The new team mode
 
 ### Enabling it
 
-Team mode is on when the UI host sets `ARGUS_TEAM_FILE` to the path of a team
+Team mode is on when the UI host sets `TRACAUS_TEAM_FILE` to the path of a team
 file. When it is not set, the UI behaves as it does today in default mode (one
 shared password, local use). When it is set, `APP_PASSWORD` is not used.
 
@@ -228,11 +228,11 @@ after this change, which is how the removal is proven safe.
 
 | Interface | Before | After |
 | --- | --- | --- |
-| UI host environment | `KIRA_AUTH_MODE=oidc` plus session, key and policy variables | `ARGUS_TEAM_FILE` only |
+| UI host environment | `KIRA_AUTH_MODE=oidc` plus session, key and policy variables | `TRACAUS_TEAM_FILE` only |
 | `runtime.json` | optional `identity` and `security` blocks | removed; rejected with a clear message |
 | `automation.json` | `initial_access` list | removed |
 | `init` | `--identity` flag | removed |
-| Launcher | staging-ticket option; drops identity variables | no ticket option; accepts `--team-file` and passes `ARGUS_TEAM_FILE` to the UI |
+| Launcher | staging-ticket option; drops identity variables | no ticket option; accepts `--team-file` and passes `TRACAUS_TEAM_FILE` to the UI |
 | Canary | needs a private ticket in identity mode | always the ticket-free `runtime_canary` path |
 
 ## 8. Trade-offs stated plainly
@@ -241,7 +241,7 @@ after this change, which is how the removal is proven safe.
   revocation list. Removing a user from the file ends their access on their
   next request, but an in-flight request completes.
 - One AWS role serves every user of the hosted UI. Per-person scope is
-  enforced in Argus's code, not by IAM. Anyone who can run code in the UI
+  enforced in Tracaus's code, not by IAM. Anyone who can run code in the UI
   process, or read its environment, holds that role.
 - Rate limits are per process, so several processes allow several times the
   limit. Run one process, or accept that.
@@ -270,8 +270,8 @@ These come after team mode and each gets its own design:
 1. **Log sources.** Two supported options. A: logs already in existing log
    groups (Docker, Nginx, application), mapped to an instance by explicit
    configuration, with an optional stream prefix when instances share a group.
-   B: Argus's own convention, where the user creates log groups named by
-   instance ID (`<prefix>/<instance-id>/<suffix>`) and Argus's generated agent
+   B: Tracaus's own convention, where the user creates log groups named by
+   instance ID (`<prefix>/<instance-id>/<suffix>`) and Tracaus's generated agent
    configuration ships to them. Today only B exists: the tool handlers, the
    templates and the IAM scope all assume it.
 2. **CloudWatch agent configuration** per application type (Nginx, Docker with

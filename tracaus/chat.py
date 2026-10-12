@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 
 from botocore.exceptions import ClientError, NoCredentialsError, PartialCredentialsError
 
-from argus import safety
-from argus.runtime import RuntimeStop
-from argus.transport import clip_utf8, error_result
+from tracaus import safety
+from tracaus.runtime import RuntimeStop
+from tracaus.transport import clip_utf8, error_result
 
 MAX_PROMPT_CHARS = 4000
 MAX_OUTPUT_BYTES = 32_000
@@ -47,7 +47,7 @@ def invoke(prompt, session_id, settings, *, history=(), allowed=None, progress=N
         return failure("SCOPE_UNSUPPORTED", "This deployment cannot restrict chat to a list of instances.")
     text = ""
     try:
-        from argus import agentcore, execution
+        from tracaus import agentcore, execution
 
         payload = {
             "version": 1,
@@ -63,7 +63,7 @@ def invoke(prompt, session_id, settings, *, history=(), allowed=None, progress=N
         if settings.runtime_target == "standalone":
             options = {}
             if settings.local_tools:
-                from argus import local_tools
+                from tracaus import local_tools
 
                 options["local"] = local_tools.load(settings.local_tools)
             if allowed is not None:

@@ -1,6 +1,6 @@
 # Architecture and workflows
 
-Argus is customer-operated software. The web UI runs on a customer workstation or
+Tracaus is customer-operated software. The web UI runs on a customer workstation or
 customer-managed HTTPS host. Backend processing runs in the customer's AWS account.
 No maintainer account, control plane or managed database is required.
 Unfamiliar terms are defined in the [glossary](#glossary).
@@ -9,7 +9,7 @@ Three choices shape a deployment, and each is made when you deploy:
 
 - **Sign-in.** The default is local single-user mode with one shared UI password.
   Optional team mode adds OIDC sign-in through your identity provider and a `team.toml`
-  allowlist of people and instances on the UI host. It is on when `ARGUS_TEAM_FILE` is
+  allowlist of people and instances on the UI host. It is on when `TRACAUS_TEAM_FILE` is
   set, creates no AWS resources and works with the standalone target only.
 - **Model provider.** Amazon Bedrock is the default. A Model API (OpenAI-compatible
   or Anthropic Messages) is the alternative, for the standalone target only.
@@ -21,7 +21,7 @@ Three choices shape a deployment, and each is made when you deploy:
 | --- | --- |
 | Streamlit UI | Shared-password sign-in by default (native OIDC login and the team file in team mode), chat, incident status and report access |
 | Team file (team mode only) | `team.toml` on the UI host: who may sign in, with which role and instances. The UI process reads it, and nothing is stored in AWS |
-| Shared Python runtime | Token counting and inference through a model provider (Bedrock `CountTokens`/`Converse`, or the Model API adapter in `argus/model_api.py` selected by the `MODEL_API` setting), bounded read-only tools, redaction and structured diagnosis |
+| Shared Python runtime | Token counting and inference through a model provider (Bedrock `CountTokens`/`Converse`, or the Model API adapter in `tracaus/model_api.py` selected by the `MODEL_API` setting), bounded read-only tools, redaction and structured diagnosis |
 | Standalone Lambda or AgentCore hosts | Incident execution with pinned versions and policies. Chat runs in the UI process (standalone) or in the same AgentCore runtime as incidents. AgentCore is Bedrock only |
 | SNS, SQS and durable pipeline | Accepted-event capture, dispatch, independent notifications and fenced workers |
 | DynamoDB incident ledger/outbox | Dedupe, transitions, leases, budgets, delivery intents and recovery accounting |
@@ -76,7 +76,7 @@ or dedicated chat capacity.
 2. The UI checks the token's issuer, the immutable subject against the team file, the
    sign-in age and, if required, the `mfa` claim. A person who is not allowed sees only a
    message.
-3. An investigator asks about an instance on their list. Argus's code checks that list,
+3. An investigator asks about an instance on their list. Tracaus's code checks that list,
    not IAM, because one AWS role serves everyone. Each request counts against a
    per-person hourly limit in the UI process and writes one audit line to standard
    output. Then chat runs in the UI process as in the default mode.
@@ -96,8 +96,8 @@ or dedicated chat capacity.
 
 ### Model provider seam
 
-`argus/runtime.py` drives any client that offers Bedrock's `count_tokens` and
-`converse` calls. Bedrock needs no adapter. For a Model API, `argus/model_api.py`
+`tracaus/runtime.py` drives any client that offers Bedrock's `count_tokens` and
+`converse` calls. Bedrock needs no adapter. For a Model API, `tracaus/model_api.py`
 offers the same two calls over HTTPS and answers in the same shapes, so budgets,
 content rules and tool handling do not change. The runtime setting `MODEL_API`
 selects it, and an unset value selects Bedrock. The adapter reads the API key from a
@@ -107,7 +107,7 @@ billable request (the durable worker retries instead) and caps each HTTP call at
 
 The Anthropic protocol asks the provider's own count endpoint, which Anthropic
 documents as an estimate, and checks the billed input after the call. The OpenAI
-protocol has no count endpoint, so Argus reserves a local estimate: UTF-8 bytes divided
+protocol has no count endpoint, so Tracaus reserves a local estimate: UTF-8 bytes divided
 by `bytes_per_token` (default 3) plus 64. That estimate is not an upper bound. If the
 provider later reports more input tokens than reserved, or no usage, the run stops
 with `TOKEN_ACCOUNTING_MISMATCH`, after that call has already been made.
@@ -145,7 +145,7 @@ See [operations](OPERATE.md) for recovery and data boundaries, the
 - **Ledger:** The DynamoDB table that records each accepted event, its incident and the work still owed, written with conditional updates so duplicates are rejected. It also holds leases, budgets and recovery accounting.
 - **Lease and fence:** A worker claims an incident by taking a time-limited lease (owner and expiry) in the ledger. Each claim increments a fencing token, and every later write must present the current token, so a slow worker whose lease expired cannot overwrite the newer attempt.
 - **Local single-user mode:** The default. One shared password (`APP_PASSWORD`, at least 12 characters) protects the web UI, and chat runs in the UI process using the UI role's AWS credentials. There is no per-person sign-in. The throttle of 20 requests per hour is kept per browser session.
-- **Local tools mode:** A development-only option for chat. With `ARGUS_LOCAL_TOOLS` set to a one-file JSON config, the UI process runs the two read-only tool handlers itself with the AWS credentials on your machine, so nothing is deployed. It needs `ENVIRONMENT=development` and the standalone target, is meant for the password UI on your own machine, and cannot run incident investigations. The handlers are the deployed ones; only the transport differs. IAM no longer limits them to your instances and log groups. See the [README recipe](../README.md#try-it-against-your-own-cloudwatch-no-deployment).
+- **Local tools mode:** A development-only option for chat. With `TRACAUS_LOCAL_TOOLS` set to a one-file JSON config, the UI process runs the two read-only tool handlers itself with the AWS credentials on your machine, so nothing is deployed. It needs `ENVIRONMENT=development` and the standalone target, is meant for the password UI on your own machine, and cannot run incident investigations. The handlers are the deployed ones; only the transport differs. IAM no longer limits them to your instances and log groups. See the [README recipe](../README.md#try-it-against-your-own-cloudwatch-no-deployment).
 - **Model API provider:** An alternative to Bedrock for the standalone target. It is an OpenAI-compatible Chat Completions endpoint with tool calling, or the Anthropic Messages API, set by `model_provider` and `model_api` in `deployment.json`. Its API key lives in a Secrets Manager secret that you create, and each release pins one version of it. Redacted excerpts leave your AWS account for that provider.
 - **Outbox and intent:** An intent is a ledger row saying that something still has to happen, such as the initial notification, an investigation or the follow-up. Intents start as `PENDING` and become `SENT` once queued. The message is queued first, so a crash can cause a duplicate but never a lost intent. The set of pending intents is the outbox.
 - **Plan hash and review hash:** The plan hash is a SHA-256 digest of the `dry-run` plan, and `apply` refuses to run without it. The review hash is the digest of a rendered release bundle (source, settings, templates and bindings); operator commands refuse a bundle that does not match it.
@@ -154,5 +154,5 @@ See [operations](OPERATE.md) for recovery and data boundaries, the
 - **Sealed (seal):** After a release stack is created, the tooling attaches a stack policy that denies every update to it. A sealed release cannot be edited in place; changes need a new release ID.
 - **Standalone vs AgentCore:** The two runtime targets, set by `runtime_target`. `standalone` runs investigations in AWS Lambda and chat in the UI process. `agentcore` runs them in an Amazon Bedrock AgentCore runtime with its own endpoint. Both use the same Python orchestration and read-only tools. AgentCore supports Bedrock only.
 - **Team file:** The `team.toml` allowlist on the UI host. It names the identity provider's issuer, whether MFA is required, the longest sign-in age, a per-person hourly chat limit and each person's immutable subject, role (`viewer` or `investigator`) and instances. It holds no secrets. The UI re-reads it when it changes, so removing a person applies on their next request, and an invalid file stops the UI.
-- **Team mode:** An option that lets several people share one UI. It is on when the UI host sets `ARGUS_TEAM_FILE` (the launcher sets it from `--team-file`). People sign in through Streamlit's native OIDC login, and the team file says what each may do. It creates no AWS resources and works with the standalone target only. Chat runs in the UI process with the UI role's credentials, so Argus's code, not IAM, enforces each person's instance list. There is no remote logout.
+- **Team mode:** An option that lets several people share one UI. It is on when the UI host sets `TRACAUS_TEAM_FILE` (the launcher sets it from `--team-file`). People sign in through Streamlit's native OIDC login, and the team file says what each may do. It creates no AWS resources and works with the standalone target only. Chat runs in the UI process with the UI role's credentials, so Tracaus's code, not IAM, enforces each person's instance list. There is no remote logout.
 - **Tombstone and erasure:** Erasure removes an incident's report content and every stored version after a reviewed plan, and leaves a minimal tombstone (incident and event IDs, fence, review reference, no report content). The tombstone stops a replayed event from bringing the incident back.

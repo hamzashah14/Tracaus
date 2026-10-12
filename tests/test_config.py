@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from argus.config import AppConfig
-from argus.runtime import Limits
+from tracaus.config import AppConfig
+from tracaus.runtime import Limits
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ def test_password_is_not_in_configuration_repr(monkeypatch):
 def test_incident_dispatch_rejects_retired_target_before_request_or_aws(monkeypatch, target):
     from unittest.mock import Mock
 
-    from argus import execution, pipeline
+    from tracaus import execution, pipeline
 
     request = Mock()
     monkeypatch.setattr(execution, "incident_request", request)
@@ -86,7 +86,7 @@ MODEL_API = json.dumps(
     {
         "protocol": "openai",
         "base_url": "https://api.example.com/v1",
-        "secret_arn": "arn:aws:secretsmanager:eu-central-1:123456789012:secret:argus-staging/model-api-key-AbCdEf",  # pragma: allowlist secret
+        "secret_arn": "arn:aws:secretsmanager:eu-central-1:123456789012:secret:tracaus-staging/model-api-key-AbCdEf",  # pragma: allowlist secret
         "secret_version": "11111111-2222-3333-4444-555555555555",
     }
 )
@@ -117,13 +117,13 @@ def local(configured, monkeypatch, tmp_path):
 
     for key in ("RUNTIME_RELEASE", "LOGS_TOOL_ARN", "METRICS_TOOL_ARN", "ALLOWED_INSTANCE_IDS"):
         monkeypatch.delenv(key)
-    monkeypatch.setenv("ARGUS_LOCAL_TOOLS", write_local_tools(tmp_path))
+    monkeypatch.setenv("TRACAUS_LOCAL_TOOLS", write_local_tools(tmp_path))
     return AppConfig.from_env()
 
 
 def test_local_tools_setting_is_read_from_the_environment(configured, monkeypatch):
     assert configured.local_tools == ""
-    monkeypatch.setenv("ARGUS_LOCAL_TOOLS", "/private/local-tools.json")
+    monkeypatch.setenv("TRACAUS_LOCAL_TOOLS", "/private/local-tools.json")
     assert AppConfig.from_env().local_tools == "/private/local-tools.json"
 
 
@@ -160,7 +160,7 @@ def test_local_tools_keep_the_model_account_and_limit_requirements(local, monkey
         ("RUNTIME_TARGET", "agentcore"),
         ("LOGS_TOOL_ARN", "arn:aws:lambda:eu-central-1:123456789012:function:logs:1"),
         ("ALLOWED_INSTANCE_IDS", "i-0aaaaaaaaaaaaaaaa"),
-        ("ARGUS_LOCAL_TOOLS", "/nonexistent/local-tools.json"),
+        ("TRACAUS_LOCAL_TOOLS", "/nonexistent/local-tools.json"),
     ],
 )
 def test_local_tools_are_rejected_outside_local_development(local, monkeypatch, key, value):
@@ -169,12 +169,12 @@ def test_local_tools_are_rejected_outside_local_development(local, monkeypatch, 
 
 
 def test_team_mode_is_valid_with_the_standalone_runtime(configured, monkeypatch):
-    monkeypatch.setenv("ARGUS_TEAM_FILE", "/srv/argus/team.toml")
+    monkeypatch.setenv("TRACAUS_TEAM_FILE", "/srv/tracaus/team.toml")
     assert AppConfig.from_env().problems() == []
 
 
 def test_team_mode_needs_the_standalone_runtime(configured, monkeypatch):
-    monkeypatch.setenv("ARGUS_TEAM_FILE", "/srv/argus/team.toml")
+    monkeypatch.setenv("TRACAUS_TEAM_FILE", "/srv/tracaus/team.toml")
     monkeypatch.setenv("RUNTIME_TARGET", "agentcore")
     assert "Team mode needs RUNTIME_TARGET=standalone: chat runs in the UI process." in (
         AppConfig.from_env().problems()

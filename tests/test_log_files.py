@@ -28,15 +28,15 @@ def entries(spec):
     return cwagent(spec, spec["instances"][0])["logs"]["logs_collected"]["files"]["collect_list"]
 
 
-def test_an_owned_group_gets_argus_name_the_instance_stream_and_retention(tmp_path):
+def test_an_owned_group_gets_tracaus_name_the_instance_stream_and_retention(tmp_path):
     spec = make_spec(tmp_path, [{"group": "application", "file": "/var/log/myapp/app.log"}])
     assert {
         "file_path": "/var/log/myapp/app.log",
-        "log_group_name": f"/argus/staging/{A}/application",
+        "log_group_name": f"/tracaus/staging/{A}/application",
         "log_stream_name": A,
         "retention_in_days": spec["log_retention_days"],
     } in entries(spec)
-    assert f"/argus/staging/{A}/application" in log_groups(
+    assert f"/tracaus/staging/{A}/application" in log_groups(
         spec
     )  # the stack creates the group the agent writes
 
@@ -59,7 +59,7 @@ def test_nginx_comes_first_and_the_heartbeat_stays_last(tmp_path):
         "/var/log/nginx/error.log",
         "/var/log/myapp/app.log",
         "/var/log/myapp/error.log",
-        "/var/log/argus-collector-heartbeat.log",
+        "/var/log/tracaus-collector-heartbeat.log",
     ]
 
 

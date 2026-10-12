@@ -63,7 +63,7 @@ def examples(spec, config, *, include_bindings=False):
             spec,
             tool_artifacts,
             {
-                "arn": f"arn:aws:secretsmanager:{spec['bedrock_region']}:{account}:secret:argus/staging/cursor-123456",
+                "arn": f"arn:aws:secretsmanager:{spec['bedrock_region']}:{account}:secret:tracaus/staging/cursor-123456",
                 "version_id": "a" * 32,
             },
         ),
@@ -101,7 +101,7 @@ def examples(spec, config, *, include_bindings=False):
 def main():
     spec = load(ROOT / "examples/deployment.example.json")
     config = json.loads((ROOT / "examples/durable.example.json").read_text())
-    with tempfile.TemporaryDirectory(prefix="argus-durable-") as temp:
+    with tempfile.TemporaryDirectory(prefix="tracaus-durable-") as temp:
         files = []
         for mode in ("same", "split"):
             if mode == "split":

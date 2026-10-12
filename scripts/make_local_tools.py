@@ -12,8 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from argus import local_tools  # noqa: E402
 from infra import spec as deployment  # noqa: E402 — runnable from outside the repository
+from tracaus import local_tools  # noqa: E402
 
 
 def build(spec):
@@ -55,7 +55,7 @@ def main(argv=None):
     except (ValueError, OSError) as error:
         print(f"Local tools file not written: {error}", file=sys.stderr)
         return 1
-    print(f"Wrote {args.out}. Set ARGUS_LOCAL_TOOLS={args.out} with ENVIRONMENT=development.")
+    print(f"Wrote {args.out}. Set TRACAUS_LOCAL_TOOLS={args.out} with ENVIRONMENT=development.")
     return 0
 
 

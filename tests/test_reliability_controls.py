@@ -14,12 +14,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from argus import agentcore, observability, pipeline
-from argus.ledger import Ledger
 from infra import durable_ops, observations, owned_ops, release, verify
 from infra.spec import ROOT, alarm_descriptors, load
 from scripts.dev.validate_durable import examples
 from scripts.dev.validate_observations import fixtures
+from tracaus import agentcore, observability, pipeline
+from tracaus.ledger import Ledger
 
 SPEC = load(ROOT / "examples/observability.example.json")
 CONFIG = json.loads((ROOT / "examples/durable.example.json").read_text())
@@ -35,11 +35,11 @@ def env(monkeypatch):
         "EXPECTED_ACCOUNT_ID": ACCOUNT,
         "INCIDENT_TABLE": "synthetic",
         "STATUS_BASE_URL": "https://status.example.invalid/",
-        "REPORTS_TOPIC_ARN": f"arn:aws:sns:{REGION}:{ACCOUNT}:argus-staging-reports",
+        "REPORTS_TOPIC_ARN": f"arn:aws:sns:{REGION}:{ACCOUNT}:tracaus-staging-reports",
         "PRIMARY_EMAIL": SPEC["notification_email"],
-        "FALLBACK_TOPIC_ARN": f"arn:aws:sns:{REGION}:{ACCOUNT}:argus-staging-observation-fallback",
+        "FALLBACK_TOPIC_ARN": f"arn:aws:sns:{REGION}:{ACCOUNT}:tracaus-staging-observation-fallback",
         "FALLBACK_EMAIL": "fallback@example.invalid",
-        "HEALTH_NAMESPACE": "argus/staging/Health",
+        "HEALTH_NAMESPACE": "tracaus/staging/Health",
         "OBS_SETTINGS": json.dumps({**SPEC["observability"], "enabled": True}),
         "INITIAL_QUEUE_URL": "initial",
         "REPORT_QUEUE_URL": "report",
@@ -50,7 +50,7 @@ def env(monkeypatch):
 
 def role_fixture():
     planned = {
-        "Path": "/argus/staging/",
+        "Path": "/tracaus/staging/",
         "AssumeRolePolicyDocument": {
             "Version": "2012-10-17",
             "Statement": [
@@ -81,7 +81,7 @@ def role_fixture():
 @pytest.mark.parametrize("drift", ["trust", "grants", "attached", "inline", "boundary", "path"])
 def test_role_drift_fails_closed(drift):
     client, planned = role_fixture()
-    owned_ops.verify_role(client, "arn:aws:iam::123456789012:role/argus/staging/test", planned)
+    owned_ops.verify_role(client, "arn:aws:iam::123456789012:role/tracaus/staging/test", planned)
     if drift == "trust":
         client.get_role.return_value["Role"]["AssumeRolePolicyDocument"]["Statement"] = []
     elif drift == "grants":
@@ -97,7 +97,7 @@ def test_role_drift_fails_closed(drift):
             "unexpected"
         )
     with pytest.raises(verify.VerificationError):
-        owned_ops.verify_role(client, "arn:aws:iam::123456789012:role/argus/staging/test", planned)
+        owned_ops.verify_role(client, "arn:aws:iam::123456789012:role/tracaus/staging/test", planned)
 
 
 @pytest.mark.parametrize("logical", ["Ingress", "Dispatch", "Investigate", "Initial", "Report", "Reconcile"])
@@ -125,9 +125,9 @@ def test_standalone_verification_checks_each_owned_role(tmp_path, logical, drift
         )
         return {
             **planned["Resources"][key]["Properties"],
-            "Role": f"arn:aws:iam::{ACCOUNT}:role/argus/staging/{key}Role"
+            "Role": f"arn:aws:iam::{ACCOUNT}:role/tracaus/staging/{key}Role"
             if drift != "binding" or key != logical
-            else f"arn:aws:iam::{ACCOUNT}:role/argus/staging/other",
+            else f"arn:aws:iam::{ACCOUNT}:role/tracaus/staging/other",
         }
 
     lam.get_function_configuration.side_effect = configuration
@@ -474,7 +474,7 @@ def test_real_sdk_socket_has_absolute_deadline_and_child_is_reaped(behavior, mon
     # using dummy credentials and no retries. Parent tests continue denying AWS.
     code = """import boto3,json,sys,time
 from botocore.config import Config
-from argus.agentcore import invoke_stream
+from tracaus.agentcore import invoke_stream
 c=boto3.client('bedrock-agentcore',region_name='eu-central-1',endpoint_url=sys.argv[1],aws_access_key_id='synthetic',aws_secret_access_key='synthetic',config=Config(connect_timeout=1,read_timeout=10,retries={'total_max_attempts':1}))
 print(json.dumps(invoke_stream({'release':'test'},arn='arn:aws:bedrock-agentcore:eu-central-1:123456789012:runtime/test-1234567890',qualifier='release_test',region='eu-central-1',account='123456789012',session_id='incident_'+'a'*40,deadline=time.time()+30,client=c)))
 """
@@ -687,12 +687,12 @@ def test_receipts_preserve_first_time_and_collect_reordered_duplicate_ids(env):
             "body": json.dumps(
                 {
                     "Type": "Notification",
-                    "TopicArn": f"arn:aws:sns:{REGION}:{ACCOUNT}:argus-staging-reports",
+                    "TopicArn": f"arn:aws:sns:{REGION}:{ACCOUNT}:tracaus-staging-reports",
                     "MessageId": message_id,
                     "MessageAttributes": {
-                        "argus_incident": {"Value": IID},
-                        "argus_canary": {"Value": "true"},
-                        "argus_notification": {"Value": IID + "-initial"},
+                        "tracaus_incident": {"Value": IID},
+                        "tracaus_canary": {"Value": "true"},
+                        "tracaus_notification": {"Value": IID + "-initial"},
                     },
                 }
             ),
@@ -718,12 +718,12 @@ def test_receipt_rejects_wrong_notification_identity_before_writing(env, stable)
     ledger = MagicMock()
     message = {
         "Type": "Notification",
-        "TopicArn": f"arn:aws:sns:{REGION}:{ACCOUNT}:argus-staging-reports",
+        "TopicArn": f"arn:aws:sns:{REGION}:{ACCOUNT}:tracaus-staging-reports",
         "MessageId": "synthetic",
         "MessageAttributes": {
-            "argus_incident": {"Value": IID},
-            "argus_canary": {"Value": "true"},
-            "argus_notification": {"Value": stable},
+            "tracaus_incident": {"Value": IID},
+            "tracaus_canary": {"Value": "true"},
+            "tracaus_notification": {"Value": stable},
         },
     }
     with patch.object(observability, "store", return_value=ledger):

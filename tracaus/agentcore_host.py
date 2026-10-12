@@ -10,7 +10,7 @@ import queue
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from argus.execution import execute, safe_chat
+from tracaus.execution import execute, safe_chat
 
 SLOTS = threading.BoundedSemaphore(2)
 STATE_LOCK = threading.Lock()

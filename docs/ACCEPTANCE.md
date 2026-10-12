@@ -1,6 +1,6 @@
 # Live acceptance checklist
 
-**The maintainers have never run these checks against real AWS.** Argus's automated tests use fakes. They say nothing
+**The maintainers have never run these checks against real AWS.** Tracaus's automated tests use fakes. They say nothing
 about your IAM, quotas, identity provider, email delivery or recovery. Treat every box below as unproven until you
 tick it with evidence from your own staging deployment.
 
@@ -109,11 +109,11 @@ The maintainers have never run the Model API option against a live provider. Pro
   Redaction is best effort.
   How: record the decision with the provider terms and the `base_url`. Review redacted output on real samples.
 - [ ] **Provider quota and budget hold.** The provider's quota, rate limits and billing alert cover your expected alert
-  and chat load. Argus has no dollar cap, and the provider bills you outside AWS.
-  How: set a limit or alert at the provider. Send a burst and watch for rate-limit errors. Argus does not retry inside a
+  and chat load. Tracaus has no dollar cap, and the provider bills you outside AWS.
+  How: set a limit or alert at the provider. Send a burst and watch for rate-limit errors. Tracaus does not retry inside a
   call, so the durable worker retries within its limits.
 - [ ] **Token accounting fails closed.** A run stops with `TOKEN_ACCOUNTING_MISMATCH` and does not continue when the
-  provider reports more input than Argus reserved, or no usage. With an OpenAI-compatible provider the reservation is a
+  provider reports more input than Tracaus reserved, or no usage. With an OpenAI-compatible provider the reservation is a
   local estimate, not an upper bound. The Anthropic count endpoint is the provider's own estimate.
   How: observe the stop yourself. With the OpenAI protocol, on a staging release with `bytes_per_token` at 8 (the
   smallest estimate allowed), ask one chat question and expect the run to stop. Then compare real prompts with the

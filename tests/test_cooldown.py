@@ -7,23 +7,23 @@ from unittest.mock import MagicMock
 import pytest
 from botocore.exceptions import ClientError
 
-from argus import pipeline
-from argus.incident import normalize_sns
-from argus.ledger import Ledger
 from infra import durable
 from infra.spec import ROOT, load
 from scripts.dev import validate_durable
+from tracaus import pipeline
+from tracaus.incident import normalize_sns
+from tracaus.ledger import Ledger
 
 ACCOUNT, REGION = "123456789012", "eu-central-1"
 IID = "i-0123456789abcdef0"
 PARENT = "b" * 32
-TOPIC = f"arn:aws:sns:{REGION}:{ACCOUNT}:argus-staging-alarms"
+TOPIC = f"arn:aws:sns:{REGION}:{ACCOUNT}:tracaus-staging-alarms"
 
 
 def event(kind="alarm", suffix="cpu", at="2026-10-09T10:00:00Z", **extra):
     alarm = {
-        "AlarmName": f"argus-staging-{IID}-{suffix}",
-        "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:argus-staging-{IID}-{suffix}",
+        "AlarmName": f"tracaus-staging-{IID}-{suffix}",
+        "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:tracaus-staging-{IID}-{suffix}",
         "StateChangeTime": at,
         "NewStateValue": "ALARM",
         "Trigger": {"Dimensions": [{"name": "InstanceId", "value": IID}]},
@@ -40,7 +40,7 @@ def event(kind="alarm", suffix="cpu", at="2026-10-09T10:00:00Z", **extra):
     raw = json.dumps(
         {"Type": "Notification", "TopicArn": TOPIC, "Message": json.dumps(alarm if kind == "alarm" else ec2)}
     )
-    return {**normalize_sns(raw, TOPIC, ACCOUNT, REGION, {IID}, "argus-staging-"), **extra}
+    return {**normalize_sns(raw, TOPIC, ACCOUNT, REGION, {IID}, "tracaus-staging-"), **extra}
 
 
 def store(marker=None, **tables):
@@ -159,7 +159,7 @@ def test_ingress_reads_the_setting_and_counts_a_suppressed_alarm(monkeypatch):
         "ALLOWED_INSTANCE_IDS": IID,
         "ALARMS_TOPIC_ARN": TOPIC,
         "EXPECTED_ACCOUNT_ID": ACCOUNT,
-        "ALARM_NAME_PREFIX": "argus-staging-",
+        "ALARM_NAME_PREFIX": "tracaus-staging-",
         "INCIDENT_RETENTION_DAYS": "30",
     }.items():
         monkeypatch.setenv(name, value)
@@ -172,8 +172,8 @@ def test_ingress_reads_the_setting_and_counts_a_suppressed_alarm(monkeypatch):
             "TopicArn": TOPIC,
             "Message": json.dumps(
                 {
-                    "AlarmName": f"argus-staging-{IID}-cpu",
-                    "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:argus-staging-{IID}-cpu",
+                    "AlarmName": f"tracaus-staging-{IID}-cpu",
+                    "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:tracaus-staging-{IID}-cpu",
                     "StateChangeTime": "2026-10-09T10:00:00Z",
                     "NewStateValue": "ALARM",
                     "Trigger": {"Dimensions": [{"name": "InstanceId", "value": IID}]},

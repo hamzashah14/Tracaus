@@ -9,18 +9,18 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from argus import pipeline
-from argus.incident import InvalidEvent, normalize_sns
-from argus.ledger import Ledger
-from argus.status import load as load_status
+from tracaus import pipeline
+from tracaus.incident import InvalidEvent, normalize_sns
+from tracaus.ledger import Ledger
+from tracaus.status import load as load_status
 
 ACCOUNT = "123456789012"
 REGION = "eu-central-1"
 IID = "i-0123456789abcdef0"
-TOPIC = f"arn:aws:sns:{REGION}:{ACCOUNT}:argus-staging-alarms"
+TOPIC = f"arn:aws:sns:{REGION}:{ACCOUNT}:tracaus-staging-alarms"
 ALARM = {
-    "AlarmName": f"argus-staging-{IID}-status",
-    "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:argus-staging-{IID}-status",
+    "AlarmName": f"tracaus-staging-{IID}-status",
+    "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:tracaus-staging-{IID}-status",
     "StateChangeTime": "2026-10-05T10:00:00Z",
     "NewStateValue": "ALARM",
     "Trigger": {"Dimensions": [{"name": "InstanceId", "value": IID}]},
@@ -32,7 +32,7 @@ def envelope(value=ALARM, topic=TOPIC):
 
 
 def normalize(raw):
-    return normalize_sns(raw, TOPIC, ACCOUNT, REGION, {IID}, "argus-staging-")
+    return normalize_sns(raw, TOPIC, ACCOUNT, REGION, {IID}, "tracaus-staging-")
 
 
 def failure(code):
@@ -759,7 +759,7 @@ def test_ingress_queue_delay_does_not_reset_incident_deadline(monkeypatch):
         "ALARMS_TOPIC_ARN": TOPIC,
         "EXPECTED_ACCOUNT_ID": ACCOUNT,
         "MONITOR_REGION": REGION,
-        "ALARM_NAME_PREFIX": "argus-staging-",
+        "ALARM_NAME_PREFIX": "tracaus-staging-",
         "INCIDENT_RETENTION_DAYS": "30",
     }
     for key, value in values.items():

@@ -4,9 +4,9 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from argus.runtime import sdk_client
 from infra import owned_runtime, release
 from infra.verify import VerificationError, coverage, verify_function
+from tracaus.runtime import sdk_client
 
 
 def verify_role(client, arn, planned):
@@ -125,7 +125,7 @@ def verify_remote(bundle, factory):
                 }
             },
             "runtime": "PYTHON_3_12",
-            "entryPoint": ["argus_agentcore.py"],
+            "entryPoint": ["tracaus_agentcore.py"],
         }
     }
     if (

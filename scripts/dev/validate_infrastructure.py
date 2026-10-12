@@ -35,7 +35,7 @@ def examples(spec):
 
 def main():
     spec = load(ROOT / "examples/deployment.example.json")
-    with tempfile.TemporaryDirectory(prefix="argus-cfn-") as temp:
+    with tempfile.TemporaryDirectory(prefix="tracaus-cfn-") as temp:
         files = []
         for region_mode in ("same", "split"):
             if region_mode == "split":

@@ -9,12 +9,12 @@ from datetime import datetime, timedelta, timezone
 
 from botocore.exceptions import ClientError
 
-from argus import probes
-from argus.incident import normalize_sns
-from argus.ledger import Ledger, conditional
-from argus.pipeline import clients, env, partial_batch
-from argus.telemetry import emit
-from argus.time import iso_utc
+from tracaus import probes
+from tracaus.incident import normalize_sns
+from tracaus.ledger import Ledger, conditional
+from tracaus.pipeline import clients, env, partial_batch
+from tracaus.telemetry import emit
+from tracaus.time import iso_utc
 
 
 def settings():
@@ -36,7 +36,7 @@ def slot_at(now, config):
 
 def canary_payload(slot, config):
     return {
-        "source": "argus.canary",
+        "source": "tracaus.canary",
         "account": env("EXPECTED_ACCOUNT_ID"),
         "region": env("MONITOR_REGION"),
         "instance_id": config["services"][0]["instance_id"],
@@ -106,13 +106,13 @@ def recipient(event, context=None):
         if message.get("TopicArn") != env("REPORTS_TOPIC_ARN") or message.get("Type") != "Notification":
             raise ValueError("Unexpected recipient source")
         attrs = message.get("MessageAttributes", {})
-        iid = attrs.get("argus_incident", {}).get("Value", "")
-        if attrs.get("argus_canary", {}).get("Value") != "true" or not re.fullmatch(r"[0-9a-f]{32}", iid):
+        iid = attrs.get("tracaus_incident", {}).get("Value", "")
+        if attrs.get("tracaus_canary", {}).get("Value") != "true" or not re.fullmatch(r"[0-9a-f]{32}", iid):
             raise ValueError("Receipt must identify a declared canary")
         message_id = message.get("MessageId")
         if not isinstance(message_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", message_id):
             raise ValueError("Invalid recipient publication identifier")
-        notification_id = attrs.get("argus_notification", {}).get("Value")
+        notification_id = attrs.get("tracaus_notification", {}).get("Value")
         if notification_id != iid + "-initial":
             raise ValueError("Recipient must match the stable initial notification identity")
         incident = ledger.get(f"INCIDENT#{iid}")
@@ -174,7 +174,7 @@ def check_freshness(service, config, cw, logs, now):
             beat = json.loads(event["message"])
             if (
                 set(beat) == {"type", "instance_id", "timestamp"}
-                and beat["type"] == "argus.collector-heartbeat"
+                and beat["type"] == "tracaus.collector-heartbeat"
                 and beat["instance_id"] == service["instance_id"]
             ):
                 timestamp = datetime.fromisoformat(beat["timestamp"].replace("Z", "+00:00"))

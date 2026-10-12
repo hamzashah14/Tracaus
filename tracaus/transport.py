@@ -27,7 +27,7 @@ def clip_utf8(text, limit, marker=TRUNCATION):
 def error_result(code, message):
     reference = uuid.uuid4().hex[:12]
     # Never log exception messages or event/log payloads here.
-    logging.getLogger("argus").warning("error_code=%s reference=%s", code, reference)
+    logging.getLogger("tracaus").warning("error_code=%s reference=%s", code, reference)
     return {"status": "error", "error_code": code, "request_id": reference, "message": message}
 
 
@@ -77,7 +77,7 @@ def fits(event, result, limit=MAX_ENVELOPE_BYTES):
 
 
 def bounded_envelope(event, result, status=200, limit=MAX_ENVELOPE_BYTES):
-    from argus.safety import bounded
+    from tracaus.safety import bounded
 
     result = copy.deepcopy(result)
     while not fits(event, result, limit):

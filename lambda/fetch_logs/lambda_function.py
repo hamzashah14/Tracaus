@@ -12,10 +12,10 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from argus import cursor
-from argus.metrics import catalog
-from argus.time import parse_utc
-from argus.transport import bounded_envelope, error_result, fits, parameters
+from tracaus import cursor
+from tracaus.metrics import catalog
+from tracaus.time import parse_utc
+from tracaus.transport import bounded_envelope, error_result, fits, parameters
 
 MONITOR_REGION = os.environ.get("MONITOR_REGION") or os.environ.get("AWS_REGION")
 LOG_GROUP_PREFIX = (os.environ.get("LOG_GROUP_PREFIX") or "/aiops").rstrip("/")
@@ -182,7 +182,7 @@ def run_queries(client, log_group, queries, deadline):
     ids = {}
 
     def check_budget():
-        from argus.tool_deadline import check
+        from tracaus.tool_deadline import check
 
         try:
             check(deadline)
@@ -384,7 +384,7 @@ def lambda_handler(event, context):
     status = 200
     try:
         params = parameters(event)
-        from argus.tool_deadline import remaining
+        from tracaus.tool_deadline import remaining
 
         budget_s = remaining(event, context)
         deadline = time.monotonic() + max(0, budget_s)

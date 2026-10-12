@@ -10,7 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from argus.ledger import Ledger
+from tracaus.ledger import Ledger
 
 ROOT = Path(__file__).resolve().parents[1]
 # AWS's list of DynamoDB reserved words, one per line: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ReservedWords.html
@@ -36,7 +36,7 @@ def unaliased_reserved_words(expression):
 
 def test_every_dynamodb_expression_aliases_reserved_words():
     found = []
-    for path in [*(ROOT / "argus").glob("*.py"), *(ROOT / "lambda").glob("*/*.py")]:
+    for path in [*(ROOT / "tracaus").glob("*.py"), *(ROOT / "lambda").glob("*/*.py")]:
         for node in ast.walk(ast.parse(path.read_text())):
             pairs = []
             if isinstance(node, ast.keyword) and node.arg in EXPRESSIONS:

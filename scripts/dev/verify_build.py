@@ -37,7 +37,7 @@ TARGETS = {
             ],
             check=True,
         ),
-        "import": "import boto3,lambda_function; from argus.metrics import catalog; "
+        "import": "import boto3,lambda_function; from tracaus.metrics import catalog; "
         "assert isinstance(catalog(),list); print(boto3.__version__)",
         "mismatch": "Independent builds do not match",
     },
@@ -50,7 +50,7 @@ TARGETS = {
     "agentcore": {
         "dir": "agentcore",
         "build": lambda out: build(("incident_investigate",), out, CATALOG, WHEELS, architecture="arm64"),
-        "import": "import boto3,argus_agentcore,argus.execution,argus.runtime; print(boto3.__version__)",
+        "import": "import boto3,tracaus_agentcore,tracaus.execution,tracaus.runtime; print(boto3.__version__)",
         "mismatch": "AgentCore host builds differ",
         "note": "; live AgentCore boot pending",
     },
@@ -73,7 +73,7 @@ def verify(name):
         raise AssertionError(target["mismatch"])
     versions = set()
     for function, artifact in a["functions"].items():
-        with tempfile.TemporaryDirectory(prefix=f"argus-{name}-") as temp:
+        with tempfile.TemporaryDirectory(prefix=f"tracaus-{name}-") as temp:
             with zipfile.ZipFile(outputs[0] / artifact["artifact"]) as archive:
                 # Our locked SDK dependencies are pure Python. Reject architecture-specific
                 # binaries rather than mistake an import on macOS for proof of Linux ARM64.

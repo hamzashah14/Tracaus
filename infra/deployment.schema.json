@@ -201,7 +201,7 @@
             }
           },
           "existing_log_groups": {
-            "description": "Log groups that already exist. Argus reads them and never creates or changes them.",
+            "description": "Log groups that already exist. Tracaus reads them and never creates or changes them.",
             "type": "array",
             "maxItems": 8,
             "items": {

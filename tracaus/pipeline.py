@@ -10,12 +10,12 @@ from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
 
-from argus import safety
-from argus.incident import InvalidEvent, normalize_sns
-from argus.ledger import MAX_ATTEMPTS, Ledger
-from argus.telemetry import emit
-from argus.time import iso_utc, parse_utc
-from argus.transport import clip_utf8
+from tracaus import safety
+from tracaus.incident import InvalidEvent, normalize_sns
+from tracaus.ledger import MAX_ATTEMPTS, Ledger
+from tracaus.telemetry import emit
+from tracaus.time import iso_utc, parse_utc
+from tracaus.transport import clip_utf8
 
 CLIENT_CONFIG = Config(connect_timeout=3, read_timeout=8, retries={"total_max_attempts": 1})
 REPORT_LIMIT = 64 * 1024
@@ -357,7 +357,7 @@ def checkpoint_writer(store, claim, s3=None):
 
 
 def invoke_agent(incident, budget, checkpoint=None, *, store=None, claim=None):
-    from argus import agentcore, execution
+    from tracaus import agentcore, execution
 
     target = env("RUNTIME_TARGET")
     if target not in {"standalone", "agentcore"}:
@@ -442,15 +442,15 @@ def notify(event, context, kind):
         try:
             response = sns.publish(
                 TopicArn=topic,
-                Subject=f"[Argus] {kind.title()} {iid[:12]}",
+                Subject=f"[Tracaus] {kind.title()} {iid[:12]}",
                 Message=text,
                 MessageAttributes={
-                    "argus_notification": {"DataType": "String", "StringValue": notification_id},
-                    "argus_canary": {
+                    "tracaus_notification": {"DataType": "String", "StringValue": notification_id},
+                    "tracaus_canary": {
                         "DataType": "String",
                         "StringValue": "true" if "canary_slot" in incident else "false",
                     },
-                    "argus_incident": {"DataType": "String", "StringValue": iid},
+                    "tracaus_incident": {"DataType": "String", "StringValue": iid},
                 },
             )
             if not response.get("MessageId"):

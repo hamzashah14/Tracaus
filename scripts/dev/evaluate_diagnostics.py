@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from argus import diagnosis, model_api, runtime, safety, work_policy  # noqa: E402
 from infra.security_ops import private_write  # noqa: E402
+from tracaus import diagnosis, model_api, runtime, safety, work_policy  # noqa: E402
 
 
 def suite():
@@ -213,7 +213,7 @@ def main():
                 raise ValueError("Paid evaluation requires explicit authorization and region")
             import os
 
-            os.environ["ARGUS_DIAGNOSTIC_POLICY"] = diagnosis.VERSION
+            os.environ["TRACAUS_DIAGNOSTIC_POLICY"] = diagnosis.VERSION
             result = live(args.live_model, args.region, args.repeats, args.token_budget)
             private_write(args.output, result)
         else:

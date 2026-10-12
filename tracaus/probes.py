@@ -34,7 +34,7 @@ def check(route, *, resolve=socket.getaddrinfo, connection=PinnedHTTPS, clock=ti
         if left <= 0:
             return {"healthy": False, "code": "TIMEOUT", "latency_ms": 0}
         conn = connection(parsed.hostname, sorted(addresses)[0], left)
-        conn.request("GET", parsed.path, headers={"User-Agent": "Argus-Readiness/1", "Connection": "close"})
+        conn.request("GET", parsed.path, headers={"User-Agent": "Tracaus-Readiness/1", "Connection": "close"})
         response = conn.getresponse()
         # Only a small body is read to detect a hung response. No body is stored/logged.
         data = response.read(4097)
@@ -71,7 +71,7 @@ def bounded_check(route, *, launcher=None):
 
     launcher = launcher or subprocess.Popen
     child = launcher(
-        [sys.executable, "-m", "argus.probes"],
+        [sys.executable, "-m", "tracaus.probes"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

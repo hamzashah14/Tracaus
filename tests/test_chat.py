@@ -5,8 +5,8 @@ from unittest.mock import Mock
 import pytest
 from botocore.exceptions import ClientError, NoCredentialsError
 
-from argus import chat, execution, runtime
-from argus.config import AppConfig
+from tracaus import chat, execution, runtime
+from tracaus.config import AppConfig
 
 SETTINGS = AppConfig(
     "eu-central-1",
@@ -104,8 +104,8 @@ def test_deployed_chat_still_calls_execute_with_the_payload_only(monkeypatch):
 
 
 def test_local_tools_chat_passes_the_loaded_config_and_the_local_release(monkeypatch, tmp_path):
-    from argus import local_tools
     from tests.helpers import write_local_tools
+    from tracaus import local_tools
 
     for key in ("ALLOWED_INSTANCE_IDS", "LOG_CURSOR_SECRET_ARN"):
         monkeypatch.delenv(key, raising=False)
@@ -123,8 +123,8 @@ def test_local_tools_chat_passes_the_loaded_config_and_the_local_release(monkeyp
 def team_settings(monkeypatch):
     import json
 
-    from argus.config import AppConfig
-    from argus.runtime import Limits
+    from tracaus.config import AppConfig
+    from tracaus.runtime import Limits
 
     for key, value in {
         "BEDROCK_REGION": "eu-central-1",
@@ -139,7 +139,7 @@ def team_settings(monkeypatch):
         "METRICS_TOOL_ARN": "arn:aws:lambda:eu-central-1:123456789012:function:metrics:1",
     }.items():
         monkeypatch.setenv(key, value)
-    for key in ("MODEL_API", "ARGUS_LOCAL_TOOLS"):
+    for key in ("MODEL_API", "TRACAUS_LOCAL_TOOLS"):
         monkeypatch.delenv(key, raising=False)
     return AppConfig.from_env()
 
@@ -147,7 +147,7 @@ def team_settings(monkeypatch):
 def test_invoke_without_a_scope_calls_execute_exactly_as_before(monkeypatch):
     from unittest.mock import Mock
 
-    from argus import chat, execution
+    from tracaus import chat, execution
 
     execute = Mock(
         return_value={"text": "ok", "complete": True, "usage": {"input_tokens": 3, "output_tokens": 4}}
@@ -162,7 +162,7 @@ def test_invoke_without_a_scope_calls_execute_exactly_as_before(monkeypatch):
 def test_invoke_passes_the_callers_scope_to_execute(monkeypatch):
     from unittest.mock import Mock
 
-    from argus import chat, execution
+    from tracaus import chat, execution
 
     execute = Mock(return_value={"text": "ok", "complete": True, "usage": {}})
     monkeypatch.setattr(execution, "execute", execute)
@@ -171,13 +171,13 @@ def test_invoke_passes_the_callers_scope_to_execute(monkeypatch):
 
 
 def test_failures_carry_no_usage():
-    from argus import chat
+    from tracaus import chat
 
     assert chat.failure("X", "message").usage == {}
 
 
 def test_a_scope_is_refused_where_the_runtime_cannot_enforce_it(monkeypatch):
-    from argus import agentcore
+    from tracaus import agentcore
 
     calls = [Mock(), Mock()]
     monkeypatch.setattr(execution, "execute", calls[0])

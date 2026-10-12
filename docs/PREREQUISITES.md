@@ -1,4 +1,4 @@
-# Prerequisites: what must exist before you deploy Argus
+# Prerequisites: what must exist before you deploy Tracaus
 
 > **Status.** The deployment tooling has only been tested locally. It has never been run against a
 > real AWS account. Treat every item here as unproven until you have done it in your own staging
@@ -23,12 +23,12 @@ optional add-on of three Lambda functions that probe your services and send test
 
 - [ ] **Decisions made:** sign-in mode, model provider and runtime target (section 1).
 - [ ] **One AWS account** with its 12-digit ID, and two enabled regions: monitor and Bedrock (2.1).
-- [ ] **Quotas fit.** Lambda unreserved concurrency is at least 100 above what Argus reserves (2.3).
+- [ ] **Quotas fit.** Lambda unreserved concurrency is at least 100 above what Tracaus reserves (2.3).
 - [ ] **A model that works:** Bedrock access for a model that supports tools and `CountTokens`, or a
   Model API key secret that you created (2.4, 8).
 - [ ] **Three IAM roles exist** (operator, CloudFormation execution, UI workload) and you have an AWS
   profile that is a session of the operator role. No access keys in any file (section 3).
-- [ ] **1 to 10 Linux EC2 instances** in the monitor region, publishing the metrics and logs Argus
+- [ ] **1 to 10 Linux EC2 instances** in the monitor region, publishing the metrics and logs Tracaus
   expects (section 4).
 - [ ] **One to five alert addresses** and a fixed HTTPS status URL for alert links (6.1).
 - [ ] **A workstation:** Python 3.12, Git, a clean committed checkout and the locked installs
@@ -46,7 +46,7 @@ cannot be combined with AgentCore.
 
 **Who signs in.** Default: local single-user mode, with the UI on your machine behind one shared
 password. Option: team mode (your identity provider with MFA, and a `team.toml` allowlist of people
-and instances on the UI host). It is on if, and only if, the UI host sets `ARGUS_TEAM_FILE`. It needs
+and instances on the UI host). It is on if, and only if, the UI host sets `TRACAUS_TEAM_FILE`. It needs
 no AWS resources and works only with `standalone`. How:
 [DEPLOY.md section 7](DEPLOY.md#7-optional-team-mode).
 
@@ -71,12 +71,12 @@ Amazon Bedrock AgentCore with Bedrock models only. It needs extra IAM permission
 | Bedrock region | Model calls, the two read-only tool functions, the tools bucket and the secrets. It may equal the monitor region. A same-region deployment still gets separate buckets |
 | Both regions | Enabled for your account (`opt-in-not-required` or `opted-in`). Names look like `eu-central-1`. A name with a fourth part, such as `us-gov-west-1`, fails the schema |
 
-### 2.2 AWS services Argus uses
+### 2.2 AWS services Tracaus uses
 
-Most resources are named `PROJECT-ENVIRONMENT-...` (for example `argus-staging-incidents`). Release stacks and
+Most resources are named `PROJECT-ENVIRONMENT-...` (for example `tracaus-staging-incidents`). Release stacks and
 functions add `RELEASE_ID`. Buckets add the account ID and region. Names must stay within 64 characters.
 
-| Service | What Argus creates | Needed? |
+| Service | What Tracaus creates | Needed? |
 | --- | --- | --- |
 | CloudFormation | One stack per stage. You never write a template | Required |
 | IAM | Roles under the path `/PROJECT/ENVIRONMENT/` (3.5) | Required |
@@ -91,17 +91,17 @@ functions add `RELEASE_ID`. Buckets add the account ID and region. Names must st
 | Secrets Manager | `PROJECT-ENVIRONMENT/log-cursor` (generated). `.../model-api-key` is yours | Required, plus optional |
 | Bedrock | Model calls: `bedrock:InvokeModel` and `bedrock:CountTokens` on your `model_arns` | Required unless Model API |
 | Bedrock AgentCore | A runtime and endpoint per release | Optional |
-| EC2 | Nothing is created. Argus only reads your instances and their state events | Existing |
+| EC2 | Nothing is created. Tracaus only reads your instances and their state events | Existing |
 
 ### 2.3 Quotas and limits to check
 
-| Limit | What Argus needs | How to check |
+| Limit | What Tracaus needs | How to check |
 | --- | --- | --- |
-| Lambda concurrent executions (monitor region) | `check` fails if `initial_reserved_concurrency` is greater than `UnreservedConcurrentExecutions` minus 100. The example value is 2, so you need at least 102 unreserved. A resume does not count Argus's own earlier reservations twice | Service Quotas, or `aws lambda get-account-settings --region MONITOR_REGION`, field `AccountLimit.UnreservedConcurrentExecutions` |
+| Lambda concurrent executions (monitor region) | `check` fails if `initial_reserved_concurrency` is greater than `UnreservedConcurrentExecutions` minus 100. The example value is 2, so you need at least 102 unreserved. A resume does not count Tracaus's own earlier reservations twice | Service Quotas, or `aws lambda get-account-settings --region MONITOR_REGION`, field `AccountLimit.UnreservedConcurrentExecutions` |
 | Bedrock model quotas (Bedrock region) | `check` does not read them. One investigation can reserve up to `tokens_reserved` tokens (example 32000, limit 100000) over up to `model_steps` calls (limit 16) | Service Quotas. Only the paid canary proves it |
 | Model API provider | Its own rate limits, quota and billing. An AWS budget does not see them | The provider |
 | CloudWatch Logs Insights | No limit is documented here. A run is bounded by `log_queries` (limit 48) and `window_minutes` (limit 30), but nothing caps the bytes scanned | Not verified |
-| SNS, SQS, DynamoDB, S3, KMS | No quota is documented here. Argus creates a small fixed set (2.2) | Not verified |
+| SNS, SQS, DynamoDB, S3, KMS | No quota is documented here. Tracaus creates a small fixed set (2.2) | Not verified |
 
 ### 2.4 Bedrock model access
 
@@ -119,23 +119,23 @@ test access, quota or Converse. The paid staging canary does. An organization po
 
 ### 2.5 Billing
 
-Set a budget alarm for the account in AWS Budgets before `apply`. Argus does not create one. Name a
+Set a budget alarm for the account in AWS Budgets before `apply`. Tracaus does not create one. Name a
 budget owner who approves a pilot budget and the one paid canary. Review spend by service in Cost
 Explorer after one week of staging. This repository gives no price estimate. The cost drivers are in
 [DEPLOY.md section 2](DEPLOY.md#2-what-it-costs). Token limits and billing alerts are not a dollar
 cap, and nothing shuts down when a budget is crossed.
 
-### 2.6 What Argus does not create
+### 2.6 What Tracaus does not create
 
 | You provide | Notes |
 | --- | --- |
-| The monitored EC2 fleet | Existing Linux instances. Argus never installs software on them |
+| The monitored EC2 fleet | Existing Linux instances. Tracaus never installs software on them |
 | CloudWatch agent, heartbeat, Nginx logging, readiness routes | Section 4 |
-| The three IAM roles, the instance role for the agent, your AWS profiles | Section 3. Argus never gives itself permissions |
+| The three IAM roles, the instance role for the agent, your AWS profiles | Section 3. Tracaus never gives itself permissions |
 | Alert addresses | One to five. A shared team address works. A separate fallback address is optional |
 | HTTPS hosting for the UI and the status URL | The launcher serves the UI on `127.0.0.1` only. Shared hosting is yours |
 | Identity provider (team mode), Model API account and key secret | Only with those options (section 8) |
-| AWS Budgets alarm, and an external monitor | If the whole account or region fails, Argus's alerts fail with it |
+| AWS Budgets alarm, and an external monitor | If the whole account or region fails, Tracaus's alerts fail with it |
 
 ## 3. IAM roles and identities
 
@@ -145,7 +145,7 @@ cap, and nothing shuts down when a budget is crossed.
 | --- | --- | --- | --- |
 | `ci_principal_arn` | Operator | The role you run `check` and `apply` as. Your credentials must be an assumed-role session of exactly this role | Yours: whatever lets you sign in (SSO or an assumed role) |
 | `deployment_role_arn` | CloudFormation execution | CloudFormation assumes it to create the resources | An `Allow` for `sts:AssumeRole` whose `Principal.Service` is the single string `cloudformation.amazonaws.com` |
-| `ui_principal_arn` | UI workload | The identity the UI runs as. Argus's generated UI role trusts only this role | Yours: it must let the person or workload that runs the UI assume it. `check` only confirms the role exists |
+| `ui_principal_arn` | UI workload | The identity the UI runs as. Tracaus's generated UI role trusts only this role | Yours: it must let the person or workload that runs the UI assume it. `check` only confirms the role exists |
 
 - Without existing roles, an administrator can create all three with one template: `python -m infra bootstrap-iam` ([DEPLOY.md](DEPLOY.md#33-fill-in-the-three-files)).
 - All three must be explicit, different roles in `account_id`.
@@ -203,7 +203,7 @@ proof of access.
 
 ### 3.4 Profiles
 
-Argus uses the normal AWS credential chain. `automation.json` names one profile, and the tool uses it
+Tracaus uses the normal AWS credential chain. `automation.json` names one profile, and the tool uses it
 for every check and subprocess and drops ambient static keys. Use short-lived credentials from SSO or
 an assumed role. Never put access keys in the JSON files, `.env` or any other file. A `~/.aws/config`
 example (adjust it to how your organization signs in):
@@ -228,9 +228,9 @@ source_profile = YOUR_BASE_LOGIN_PROFILE
 `apply` runs its subprocesses with the EC2 instance-metadata credential source disabled. An instance
 role as your only credential source will not work, so run from a workstation (not tested).
 
-### 3.5 Roles Argus creates for itself
+### 3.5 Roles Tracaus creates for itself
 
-All sit under the path `/PROJECT/ENVIRONMENT/` and are tagged `ManagedBy=argus-cloudformation`.
+All sit under the path `/PROJECT/ENVIRONMENT/` and are tagged `ManagedBy=tracaus-cloudformation`.
 CloudFormation generates the names.
 
 | Role | Stage | Trusts | Purpose |
@@ -246,14 +246,14 @@ CloudFormation generates the names.
 ### 3.6 The instance role on each monitored server
 
 Each EC2 instance needs an instance profile whose role lets the CloudWatch agent publish metrics to
-the `CWAgent` namespace and write log events to Argus's log groups, with the instance ID as the stream
+the `CWAgent` namespace and write log events to Tracaus's log groups, with the instance ID as the stream
 name. AWS documents a managed policy for this, `CloudWatchAgentServerPolicy`. This repository does not
 verify its contents, so check AWS's agent documentation. Never put administrator credentials on a
 server.
 
 ## 4. Monitored servers
 
-Argus reads CloudWatch and never installs anything on your servers. The steps are in
+Tracaus reads CloudWatch and never installs anything on your servers. The steps are in
 [SERVERS.md](SERVERS.md). Finish them before the staging canary, which stops if a metric or log group
 is missing.
 
@@ -266,11 +266,11 @@ is missing.
 | Log groups | `/PROJECT/ENVIRONMENT/INSTANCE_ID/NAME`, with `/LOG_SEGMENT` before the instance ID if you set one. The stream name is the instance ID. Retention is `log_retention_days` |
 | Application logs | The generated file ships the files you list in `log_files`, and nothing else beyond Nginx and the heartbeat. The agent must be able to read each file |
 | Nginx (`nginx_alarm: true`) | Standard combined format in `/var/log/nginx/access.log` and the error log in `/var/log/nginx/error.log`, shipped to the `nginx-access` and `nginx-error` groups |
-| Heartbeat (observers only) | Run `scripts/collector_heartbeat.py` every minute from a supervised timer. It appends one JSON line to `/var/log/argus-collector-heartbeat.log` and makes no AWS calls. It needs Python 3 and only the standard library (minimum version not verified) |
+| Heartbeat (observers only) | Run `scripts/collector_heartbeat.py` every minute from a supervised timer. It appends one JSON line to `/var/log/tracaus-collector-heartbeat.log` and makes no AWS calls. It needs Python 3 and only the standard library (minimum version not verified) |
 | Readiness routes (observers only) | Public HTTPS on port 443, with a path. No credentials, query or redirect. Private VPC-only endpoints are not supported |
 | Time and network | Synchronized clocks (UTC), a rotated heartbeat file, and a path from the agent to CloudWatch in the monitor region (not verified here; see AWS's agent documentation) |
 
-**Log group creation.** Argus's stack creates the groups in `log_groups`, and the tool never adopts a resource that
+**Log group creation.** Tracaus's stack creates the groups in `log_groups`, and the tool never adopts a resource that
 already exists. Groups in `existing_log_groups` are only read, never created or adopted. Not verified: an agent that starts before `apply` and is allowed to create log groups
 could create them first and block the stack. To be safe, withhold that permission from the instance
 role, or start the agent after the foundation stages finish.
@@ -288,7 +288,7 @@ The example miss line has status 200 and 502 bytes, to catch a filter that reads
 status.
 
 **Check telemetry.** Before `apply`, open the `CWAgent` metrics in the CloudWatch console and confirm
-each instance shows the metrics above with exactly those dimensions. Argus creates the log groups and
+each instance shows the metrics above with exactly those dimensions. Tracaus creates the log groups and
 Nginx metrics during `apply`, so check those after the foundation stages: each group should have a
 stream named after the instance with recent events, and the `PROJECT/ENVIRONMENT/Nginx` metrics should
 appear after a test request. The coverage check inside the canary enforces all of it.
@@ -344,8 +344,8 @@ appear after a test request. The coverage check inside the canary enforces all o
 | `ui_principal_arn`, `ci_principal_arn`, `deployment_role_arn` | yes | Role ARNs in `account_id`, all different | `aws iam get-role --role-name NAME`: copy `Arn`, path included |
 | `instances` | yes | 1 to 10 unique objects with the six fields below | EC2 console |
 | `instances[].id` | yes | `i-` plus 8 or 17 lowercase hex digits | EC2 console |
-| `instances[].log_groups` | yes | 0 to 8 unique names of 1 to 40 letters, digits, `_` or `-`. May be empty if `existing_log_groups` is set | Your choice. Argus creates these groups and the agent writes the same names |
-| `instances[].existing_log_groups` | no | Up to 8 objects. `name`: 1 to 512 letters, digits, `_`, `.`, `/`, `#` or `-`, a group that already exists in the monitor region, not under Argus's own log prefix. `streams` (optional): `instance` (default) or `all` | `aws logs describe-log-groups`. Argus reads these groups and never creates or changes them. See [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist) |
+| `instances[].log_groups` | yes | 0 to 8 unique names of 1 to 40 letters, digits, `_` or `-`. May be empty if `existing_log_groups` is set | Your choice. Tracaus creates these groups and the agent writes the same names |
+| `instances[].existing_log_groups` | no | Up to 8 objects. `name`: 1 to 512 letters, digits, `_`, `.`, `/`, `#` or `-`, a group that already exists in the monitor region, not under Tracaus's own log prefix. `streams` (optional): `instance` (default) or `all` | `aws logs describe-log-groups`. Tracaus reads these groups and never creates or changes them. See [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist) |
 | `instances[].log_files` | no | Up to 16 objects, each with `group` (one of the instance's own `log_groups` or `existing_log_groups`, not the Nginx or heartbeat group) and `file` (absolute path of up to 200 letters, digits, `_`, `.`, `/`, `*`, `?` or `-`, no `..`). No repeated pair | Where your application writes its logs. [SERVERS.md](SERVERS.md#step-1-install-the-cloudwatch-agent) |
 | `instances[].disk_path` | yes | Absolute path of letters, digits, `/`, `_`, `-` | The mount point to alarm on |
 | `instances[].resource_alarms`, `nginx_alarm` | yes | Boolean each | Your choice |
@@ -386,9 +386,9 @@ end of a staging run, and the launcher passes it on.
 | Variable | Needed by | Set by hand? |
 | --- | --- | --- |
 | `APP_PASSWORD` | Default mode | **Yes.** Export it in the shell that starts the launcher (6.4). Never with team mode. The launcher does not read `.env` |
-| `ARGUS_TEAM_FILE` | Team mode | **Through the launcher:** pass `--team-file PATH`. The launcher ignores a value exported in your shell. Set it yourself only if you start `streamlit run app.py` by hand ([DEPLOY.md Appendix A](DEPLOY.md#appendix-a-manual-commands)) |
-| `ARGUS_LOCAL_TOOLS` | Local tools mode | **Yes, hand-set, development only.** Path to the one-file tool config (section 8). Needs `ENVIRONMENT=development`. Never on a deployed UI |
-| `ENVIRONMENT`, `RUNTIME_TARGET`, `BEDROCK_REGION`, `BEDROCK_MODEL_ID`, `EXPECTED_ACCOUNT_ID`, `ALLOWED_INSTANCE_IDS`, `RUNTIME_LIMITS`, `RUNTIME_RELEASE`, `ARGUS_DIAGNOSTIC_POLICY`, `EXECUTION_PURPOSE`, `OBS_NAMESPACE` (observers) | A deployed UI | **Never.** Generated. Do not invent a `RUNTIME_RELEASE` |
+| `TRACAUS_TEAM_FILE` | Team mode | **Through the launcher:** pass `--team-file PATH`. The launcher ignores a value exported in your shell. Set it yourself only if you start `streamlit run app.py` by hand ([DEPLOY.md Appendix A](DEPLOY.md#appendix-a-manual-commands)) |
+| `TRACAUS_LOCAL_TOOLS` | Local tools mode | **Yes, hand-set, development only.** Path to the one-file tool config (section 8). Needs `ENVIRONMENT=development`. Never on a deployed UI |
+| `ENVIRONMENT`, `RUNTIME_TARGET`, `BEDROCK_REGION`, `BEDROCK_MODEL_ID`, `EXPECTED_ACCOUNT_ID`, `ALLOWED_INSTANCE_IDS`, `RUNTIME_LIMITS`, `RUNTIME_RELEASE`, `TRACAUS_DIAGNOSTIC_POLICY`, `EXECUTION_PURPOSE`, `OBS_NAMESPACE` (observers) | A deployed UI | **Never.** Generated. Do not invent a `RUNTIME_RELEASE` |
 | `MONITOR_REGION`, `INCIDENT_TABLE`, `REPORT_BUCKET` | A deployed UI | **Never.** Added by `apply` |
 | `LOGS_TOOL_ARN`, `METRICS_TOOL_ARN` | `standalone` | **Never.** Generated. Absent with `agentcore` |
 | `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_ENDPOINT` | `agentcore` | **Never.** Generated |
@@ -460,7 +460,7 @@ with `standalone`.
 - A provider account and a model with tool calling, behind an OpenAI-compatible Chat Completions
   endpoint or the Anthropic Messages API. `standalone` only.
 - `base_url`: `https://`, a DNS host name with a dot, at most 256 characters, and no IP address, port,
-  credentials, query or fragment. Argus adds `/chat/completions` (`openai`) or `/v1/messages`
+  credentials, query or fragment. Tracaus adds `/chat/completions` (`openai`) or `/v1/messages`
   (`anthropic`). Redirects are not followed.
 - A secret you create **before `check`**, in your account and `bedrock_region`, named exactly
   `PROJECT-ENVIRONMENT/model-api-key`. Its value is the bare key (8 to 4096 printable ASCII
@@ -493,7 +493,7 @@ credentials. It cannot run incident investigations. It needs:
   Model API, `MODEL_API` in `.env` and `secretsmanager:GetSecretValue` on the key secret you created.
   The configuration check accepts `MODEL_API` in this mode, but no test runs it end to end.
   `BEDROCK_REGION` and `BEDROCK_MODEL_ID` stay required either way.
-- The one-file config named by `ARGUS_LOCAL_TOOLS`. These keys are required and unknown keys are rejected:
+- The one-file config named by `TRACAUS_LOCAL_TOOLS`. These keys are required and unknown keys are rejected:
   `version` (1), `monitor_region`, `log_prefix`, `instances` (1 to 100), `log_groups` (up to 1000, each
   under `<log_prefix>/<listed instance>/`) and `metric_catalog` (may be empty; each entry belongs to a
   listed instance). The optional `existing_log_groups` maps a listed instance to its existing groups,
@@ -501,11 +501,11 @@ credentials. It cannot run incident investigations. It needs:
   [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist). `log_groups` may be empty only when it is set. Write it by hand from `examples/local-tools.example.json`, or run
   `python scripts/make_local_tools.py --spec deployment.json --out .local/local-tools.json`. That makes
   no AWS call, refuses to overwrite without `--force` and writes mode 600.
-- Servers whose logs are in Argus's layout, `<log_prefix>/<instance-id>/<name>` ([SERVERS.md](SERVERS.md)),
+- Servers whose logs are in Tracaus's layout, `<log_prefix>/<instance-id>/<name>` ([SERVERS.md](SERVERS.md)),
   or in groups you list under `existing_log_groups`. Any other group, such as `/aws/lambda/...`, is not
   reachable. EC2 metrics and the standard `CWAgent`
   memory, swap and disk metrics work with an empty catalog.
-- In `.env`: `ENVIRONMENT=development`, `RUNTIME_TARGET=standalone`, no `ARGUS_TEAM_FILE`,
+- In `.env`: `ENVIRONMENT=development`, `RUNTIME_TARGET=standalone`, no `TRACAUS_TEAM_FILE`,
   `APP_PASSWORD`, `BEDROCK_REGION`, `BEDROCK_MODEL_ID`, `EXPECTED_ACCOUNT_ID` and `RUNTIME_LIMITS`. Leave
   `LOGS_TOOL_ARN`, `METRICS_TOOL_ARN`, `RUNTIME_RELEASE` and `LOG_CURSOR_SECRET_ARN` unset. Set
   `ALLOWED_INSTANCE_IDS` only if it lists the same instances as the file.

@@ -1,13 +1,13 @@
 {
   "version": 1,
   "monitor_region": "eu-central-1",
-  "log_prefix": "/argus/staging",
+  "log_prefix": "/tracaus/staging",
   "instances": [
     "i-0123456789abcdef0"
   ],
   "log_groups": [
-    "/argus/staging/i-0123456789abcdef0/app",
-    "/argus/staging/i-0123456789abcdef0/error"
+    "/tracaus/staging/i-0123456789abcdef0/app",
+    "/tracaus/staging/i-0123456789abcdef0/error"
   ],
   "metric_catalog": [
     {

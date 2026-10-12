@@ -38,12 +38,12 @@ def local_tools_value(**overrides):
     value = {
         "version": 1,
         "monitor_region": "eu-central-1",
-        "log_prefix": "/argus/staging",
+        "log_prefix": "/tracaus/staging",
         "instances": [LOCAL_A, LOCAL_B],
         "log_groups": [
-            f"/argus/staging/{LOCAL_A}/application",
-            f"/argus/staging/{LOCAL_A}/nginx-error",
-            f"/argus/staging/{LOCAL_B}/application",
+            f"/tracaus/staging/{LOCAL_A}/application",
+            f"/tracaus/staging/{LOCAL_A}/nginx-error",
+            f"/tracaus/staging/{LOCAL_B}/application",
         ],
         "metric_catalog": [
             entry("a-cpu", LOCAL_A, "CPUUtilization"),

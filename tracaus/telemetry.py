@@ -8,7 +8,7 @@ import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-_correlation = ContextVar("argus_correlation", default=(None, None))
+_correlation = ContextVar("tracaus_correlation", default=(None, None))
 
 
 @contextmanager

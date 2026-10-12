@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from argus import execution
-from argus.runtime import Limits, RuntimeStop
+from tracaus import execution
+from tracaus.runtime import Limits, RuntimeStop
 
 IID = "i-0123456789abcdef0"
 RELEASE = "a" * 64

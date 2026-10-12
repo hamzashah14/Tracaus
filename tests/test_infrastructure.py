@@ -30,8 +30,8 @@ def test_same_and_split_region_ownership(spec):
         rendered = examples(spec)
         for stage, template in rendered.items():
             expected = durable_ops.stage_region(spec, stage)
-            assert template["Metadata"]["Argus"]["ExpectedRegion"] == expected
-            assert template["Metadata"]["Argus"]["Environment"] == "staging"
+            assert template["Metadata"]["Tracaus"]["ExpectedRegion"] == expected
+            assert template["Metadata"]["Tracaus"]["Environment"] == "staging"
         assert templates.bucket_name(spec, "tools") != templates.bucket_name(spec, "monitor")
 
 
@@ -84,7 +84,7 @@ def test_roles_cannot_deploy_and_only_log_tool_reads_secret(spec):
         for logical, resource in template["Resources"].items():
             if resource["Type"] != "AWS::IAM::Role":
                 continue
-            assert resource["Properties"]["Path"] == "/argus/staging/"
+            assert resource["Properties"]["Path"] == "/tracaus/staging/"
             for policy in resource["Properties"]["Policies"]:
                 for statement in policy["PolicyDocument"]["Statement"]:
                     actions = statement["Action"]
@@ -105,13 +105,13 @@ def test_roles_cannot_deploy_and_only_log_tool_reads_secret(spec):
                     )
                     if "secretsmanager:GetSecretValue" in actions:
                         allowed_secret_roles.append((stage, logical))
-                        assert ":secret:argus-staging/log-cursor-" in statement["Resource"]
+                        assert ":secret:tracaus-staging/log-cursor-" in statement["Resource"]
     assert allowed_secret_roles == [("owned-tools", "LogsRole")]
     log_policy = rendered["owned-tools"]["Resources"]["LogsRole"]["Properties"]["Policies"][0][
         "PolicyDocument"
     ]["Statement"]
     query = next(s for s in log_policy if "logs:StartQuery" in s["Action"])
-    assert all(":log-group:/argus/staging/i-0123456789abcdef0/" in arn for arn in query["Resource"])
+    assert all(":log-group:/tracaus/staging/i-0123456789abcdef0/" in arn for arn in query["Resource"])
     assert query["Condition"]["StringEquals"]["aws:RequestedRegion"] == spec["monitor_region"]
 
 
@@ -246,7 +246,7 @@ def test_catalog_and_cwagent_share_inventory(spec):
         for i in config["logs"]["logs_collected"]["files"]["collect_list"]
     )
     nginx = next(d for d in catalog if d["id"].endswith("nginx"))
-    assert nginx["namespace"] == "argus/staging/Nginx" and nginx["dimensions"] == {}
+    assert nginx["namespace"] == "tracaus/staging/Nginx" and nginx["dimensions"] == {}
 
 
 def denied():
@@ -334,7 +334,7 @@ def test_bad_nginx_fixture_blocks_promotion(spec):
 
 
 def test_retirement_diff_preserves_unrelated_history_and_removes_old_recipient(spec):
-    retired = {"type": "AWS::CloudWatch::Alarm", "id": "argus-staging-retired-cpu"}
+    retired = {"type": "AWS::CloudWatch::Alarm", "id": "tracaus-staging-retired-cpu"}
     old = {
         "type": "AWS::SNS::Subscription",
         "id": topic_arn(spec, "reports") + ":old",
@@ -342,7 +342,7 @@ def test_retirement_diff_preserves_unrelated_history_and_removes_old_recipient(s
         "endpoint": "former@example.invalid",
         "protocol": "email",
     }
-    history = {"type": "AWS::Logs::LogGroup", "id": "/argus/staging/retired/application"}
+    history = {"type": "AWS::Logs::LogGroup", "id": "/tracaus/staging/retired/application"}
     plan = reconcile.plan(spec, [retired, old, history], "worker")
     assert plan["disable_alarms"] == [retired["id"]] and plan["unsubscribe"] == [old]
     assert plan["preserve"] == [history["id"]]
@@ -410,12 +410,12 @@ def test_local_bundle_tamper_detected(spec, tmp_path):
 
 
 def test_cursor_uses_pinned_secret_and_does_not_refresh_to_current(monkeypatch):
-    from argus import cursor
+    from tracaus import cursor
 
     cursor.secret_version.cache_clear()
     monkeypatch.setenv(
         "LOG_CURSOR_SECRET_ARN",
-        "arn:aws:secretsmanager:eu-central-1:123456789012:secret:argus-staging/log-cursor-ABCDEF",
+        "arn:aws:secretsmanager:eu-central-1:123456789012:secret:tracaus-staging/log-cursor-ABCDEF",
     )
     monkeypatch.setenv("LOG_CURSOR_SECRET_VERSION", "a" * 32)
     client = MagicMock()

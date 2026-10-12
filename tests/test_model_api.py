@@ -16,10 +16,10 @@ from urllib.parse import urlsplit
 import pytest
 from botocore.exceptions import ClientError
 
-from argus import agentcore_host, diagnosis, model_api, runtime
+from tracaus import agentcore_host, diagnosis, model_api, runtime
 
 REGION = "eu-central-1"
-ARN = f"arn:aws:secretsmanager:{REGION}:123456789012:secret:argus-model-AbCdEf"
+ARN = f"arn:aws:secretsmanager:{REGION}:123456789012:secret:tracaus-model-AbCdEf"
 VERSION = "11111111-2222-3333-4444-555555555555"
 CREDENTIAL = "fake-model-credential-for-offline-tests"
 IID = "i-0123456789abcdef0"
@@ -570,7 +570,7 @@ def test_run_usage_mismatch_stops_before_any_tool(protocol, replies):
 
 @pytest.mark.parametrize("protocol", ["openai", "anthropic"])
 def test_run_tool_use_then_structured_diagnosis(protocol, monkeypatch):
-    monkeypatch.setenv("ARGUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
+    monkeypatch.setenv("TRACAUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
     tools = MagicMock()
     tools.invoke.return_value = (TOOL_RESULT, True)
     if protocol == "openai":
@@ -903,7 +903,7 @@ def test_from_env_builds_the_configured_provider(monkeypatch):
     assert model_api.from_env().protocol == "anthropic"
 
 
-NO_SUFFIX = "arn:aws:secretsmanager:eu-central-1:123456789012:secret:argus-model"
+NO_SUFFIX = "arn:aws:secretsmanager:eu-central-1:123456789012:secret:tracaus-model"
 SSM_ARN = "arn:aws:ssm:eu-central-1:123456789012:parameter/model"
 FLOATING = "AWSCURRENT"
 

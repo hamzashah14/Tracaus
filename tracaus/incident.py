@@ -5,7 +5,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from argus.time import iso_utc, parse_utc
+from tracaus.time import iso_utc, parse_utc
 
 MAX_SOURCE_BYTES = 128 * 1024
 INSTANCE = re.compile(r"i-[0-9a-f]{17}\Z")
@@ -40,7 +40,7 @@ def normalize_sns(
         raise InvalidEvent("Unexpected SNS source")
     if canary_topic and envelope.get("TopicArn") == canary_topic:
         if set(source) != {"source", "account", "region", "instance_id", "slot", "time"} or (
-            source["source"] != "argus.canary"
+            source["source"] != "tracaus.canary"
             or source["account"] != account
             or source["region"] != region
             or type(source["slot"]) is not int

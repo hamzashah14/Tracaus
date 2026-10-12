@@ -1,6 +1,6 @@
-# Set up your servers for Argus
+# Set up your servers for Tracaus
 
-Argus reads CloudWatch logs and metrics for your EC2 instances. It never installs
+Tracaus reads CloudWatch logs and metrics for your EC2 instances. It never installs
 anything on them. You install and configure the CloudWatch agent (CWAgent), a heartbeat
 timer and, if you use Nginx, its logging. This page says what must exist and how to
 check it. Do it before the staging canary in [DEPLOY.md](DEPLOY.md): the canary runs a
@@ -12,7 +12,7 @@ of instances or autoscaling members. When an instance is replaced, update the in
 build a new release and cut over (see [OPERATE.md](OPERATE.md)). Terms are in the
 [glossary](ARCHITECTURE.md#glossary).
 
-## What Argus expects
+## What Tracaus expects
 
 Everything below is derived from the instance entries in `deployment.json`.
 
@@ -21,15 +21,15 @@ Everything below is derived from the instance entries in `deployment.json`.
 | `id` | An EC2 instance that is not terminated. The generated log stream name is the instance ID |
 | `log_groups` (names such as `application`) | A log group `/PROJECT/ENVIRONMENT/INSTANCE_ID/NAME`. If `log_segment` is set, it comes before the instance ID |
 | `log_files` (optional) | The files the generated agent file ships, each into one of the instance's groups (see Step 1) |
-| `existing_log_groups` (optional) | Log groups that already exist in the monitor region. Argus only reads them (see below) |
+| `existing_log_groups` (optional) | Log groups that already exist in the monitor region. Tracaus only reads them (see below) |
 | `nginx_alarm: true` | Log groups `.../nginx-access` and `.../nginx-error`, plus the Nginx metrics below |
 | `resource_alarms: true` | CPU, memory and disk metrics for alarms |
 | `disk_path` | The disk metric with this `path` dimension (for example `/`) |
 | `process_exe` | A process-count metric for this executable (for example `nginx`) |
 | `observability` (optional) | The heartbeat file, shipped to a dedicated heartbeat log group |
 
-Log retention is `log_retention_days`. Argus creates the groups named in `log_groups` and your agent
-writes into them. Groups you list in `existing_log_groups` are yours: Argus never creates, tags or
+Log retention is `log_retention_days`. Tracaus creates the groups named in `log_groups` and your agent
+writes into them. Groups you list in `existing_log_groups` are yours: Tracaus never creates, tags or
 changes them.
 
 ## Step 1: install the CloudWatch agent
@@ -49,7 +49,7 @@ The generated configuration publishes, every 60 seconds, to the `CWAgent` namesp
 - A process count for `process_exe` (published as `procstat_lookup_pid_count`).
 - If `nginx_alarm` is true: `/var/log/nginx/access.log` and `/var/log/nginx/error.log` to the two
   Nginx log groups.
-- If `observability` is configured: `/var/log/argus-collector-heartbeat.log` to the heartbeat group.
+- If `observability` is configured: `/var/log/tracaus-collector-heartbeat.log` to the heartbeat group.
 
 **Your application logs.** The file ships them when you list them in `log_files`. Each item names
 a group the instance already declares (in `log_groups` or `existing_log_groups`) and an absolute
@@ -100,9 +100,9 @@ from another tool, a group your own agent file fills), list it instead of moving
 ```
 
 - **Names.** Use the exact group name, up to 8 per instance, in the monitor region and the same
-  account. Wildcards and prefixes are not supported. A name under Argus's own log prefix is
+  account. Wildcards and prefixes are not supported. A name under Tracaus's own log prefix is
   rejected. `log_groups` may then be empty, but an instance needs at least one group of either kind.
-- **Read only.** Argus's stack does not create, tag, set retention on or delete these groups. The
+- **Read only.** Tracaus's stack does not create, tag, set retention on or delete these groups. The
   log tool gets read access to each one, and nothing else changes.
 - **`streams`.** The default, `instance`, reads only streams named after the instance ID. That is
   the CloudWatch agent default (`log_stream_name` of `{instance_id}`), so one group can serve
@@ -111,23 +111,23 @@ from another tool, a group your own agent file fills), list it instead of moving
   one instance only. The same group under `all` for two instances is rejected, because one
   instance could then read the other's logs.
 - **Check.** The coverage check stops with "Existing log group not found" if a group is missing.
-- **Not covered.** Nginx metric filters and the heartbeat stay on Argus's own groups. Groups in
+- **Not covered.** Nginx metric filters and the heartbeat stay on Tracaus's own groups. Groups in
   another account or region are not supported. Not verified: whether a KMS-encrypted group
   needs extra key permissions for the log tool role. Test one before you rely on it.
 
 Chat finds these groups the same way as the others: asking for an instance's log groups lists
-the existing ones after Argus's own, and a search is accepted only for the instance that lists
+the existing ones after Tracaus's own, and a search is accepted only for the instance that lists
 the group. To use the groups in the local chat mode, `scripts/make_local_tools.py` copies them
 into the local tools file.
 
 ## Step 2: Nginx logging (if `nginx_alarm` is true)
 
 - Log the standard combined format to `/var/log/nginx/access.log`, and the error log to
-  `/var/log/nginx/error.log`. With `observability` configured, Argus parses your `match` line and
+  `/var/log/nginx/error.log`. With `observability` configured, Tracaus parses your `match` line and
   rejects other access formats: "Unsupported access format; validate the customer's actual format".
 - `nginx_filters` in `deployment.json` has an `access` and an `error` filter. Each has a `pattern`
   (a CloudWatch Logs filter pattern), a `match` sample line and a `miss` sample line. Use sanitized
-  real lines from your own servers. Argus tests every pattern against both samples. The `match`
+  real lines from your own servers. Tracaus tests every pattern against both samples. The `match`
   line must match and the `miss` line must not.
 - The `miss` sample guards against reading the byte count as a status. The example miss line has
   status 200 and 502 bytes.
@@ -148,10 +148,10 @@ The heartbeat does. Run `scripts/collector_heartbeat.py` every minute on each in
 supervised scheduler such as a systemd timer, with the real instance ID:
 
 ```bash
-python3 /opt/argus/scripts/collector_heartbeat.py --instance-id "$INSTANCE_ID" --file /var/log/argus-collector-heartbeat.log
+python3 /opt/tracaus/scripts/collector_heartbeat.py --instance-id "$INSTANCE_ID" --file /var/log/tracaus-collector-heartbeat.log
 ```
 
-The path `/opt/argus/scripts` is only an example. The script appends one JSON line with the
+The path `/opt/tracaus/scripts` is only an example. The script appends one JSON line with the
 instance ID and a UTC timestamp. It makes no AWS calls and installs no timer. CWAgent ships the file.
 
 - Install the script and its unit root-owned, and make the file readable by the agent.
@@ -165,7 +165,7 @@ instance ID and a UTC timestamp. It makes no AWS calls and installs no timer. CW
 
 An observer calls the HTTPS routes you declare for each service. The route must return a
 non-success status when an essential dependency is unhealthy. If one route cannot say that,
-declare separate dependency routes (1 to 3 per service). Argus cannot add readiness behavior inside
+declare separate dependency routes (1 to 3 per service). Tracaus cannot add readiness behavior inside
 your application.
 
 Routes must be public HTTPS on port 443 with a path, with no credentials, query string or
@@ -179,13 +179,13 @@ VPC-only endpoints are not supported. Do not expose a private service just to sa
    `streams` set to `instance`, look for a stream named after the instance.
 2. Open the `CWAgent` metrics. For each instance you should see `mem_used_percent`
    (`InstanceId`), `disk_used_percent` (`InstanceId` and `path`) and
-   `procstat_lookup_pid_count` (`InstanceId`, `exe` and `pid_finder`). Argus needs these exact
+   `procstat_lookup_pid_count` (`InstanceId`, `exe` and `pid_finder`). Tracaus needs these exact
    dimensions. Mismatched dimensions are the most common failure.
 3. For Nginx, open the `PROJECT/ENVIRONMENT/Nginx` metrics after a test request or two.
 4. If the instance sets `resource_alarms`, also expect the AWS/EC2 `CPUUtilization` metric. The
    `StatusCheckFailed` metric is always required.
 
-Argus runs its own coverage check during the staging canary and again before routing is promoted.
+Tracaus runs its own coverage check during the staging canary and again before routing is promoted.
 It requires every metric descriptor above to exist and every Nginx filter to pass its samples.
 It fails with "Required metric unavailable: INSTANCE_ID-memory" (or the matching id), "Required
 evidence log group is absent", or "Required access metric filter failed its positive/negative

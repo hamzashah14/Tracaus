@@ -35,7 +35,7 @@ def load(path):
             name.startswith(owned) or name.endswith("/") or name in item["log_groups"] for name in names
         ):
             raise ValueError(
-                "Invalid existing_log_groups: names must be unique and not one of Argus's own groups"
+                "Invalid existing_log_groups: names must be unique and not one of Tracaus's own groups"
             )
         for group in groups:
             modes.setdefault(group["name"], []).append(group.get("streams", "instance"))
@@ -58,7 +58,7 @@ def load(path):
     ):
         raise ValueError("Model ARN must be included in model_arns")
     if "observability" in value:
-        from argus.observation_config import validate
+        from tracaus.observation_config import validate
 
         validate(value["observability"], value["instances"])
         descriptors = {
@@ -96,7 +96,7 @@ def tags(spec, release=False):
     value = {
         "Project": spec["project"],
         "Environment": spec["environment"],
-        "ManagedBy": "argus-cloudformation",
+        "ManagedBy": "tracaus-cloudformation",
     }
     if release:
         value["Release"] = spec["release_id"]
@@ -269,7 +269,7 @@ def log_groups(spec):
 
 
 def existing_log_groups(spec):
-    """{instance ID: {group: "instance" or "all"}} for groups Argus reads and never creates."""
+    """{instance ID: {group: "instance" or "all"}} for groups Tracaus reads and never creates."""
     return {
         item["id"]: {g["name"]: g.get("streams", "instance") for g in item["existing_log_groups"]}
         for item in spec["instances"]
@@ -278,7 +278,7 @@ def existing_log_groups(spec):
 
 
 def readable_log_groups(spec):
-    """Every group the log tool may query: the ones Argus creates plus the existing ones."""
+    """Every group the log tool may query: the ones Tracaus creates plus the existing ones."""
     return sorted(
         set(log_groups(spec)) | {g for groups in existing_log_groups(spec).values() for g in groups}
     )
@@ -292,7 +292,7 @@ def shipped(spec, instance):
 
 
 def log_file(spec, instance, entry):
-    """One agent collect_list item. Only a group Argus creates gets its retention set by the agent."""
+    """One agent collect_list item. Only a group Tracaus creates gets its retention set by the agent."""
     item = {"file_path": entry["file"], "log_stream_name": instance["id"]}
     if entry["group"] in instance["log_groups"]:
         item["log_group_name"] = f"{log_prefix(spec)}/{instance['id']}/{entry['group']}"
@@ -335,7 +335,7 @@ def cwagent(spec, instance):
                     + (
                         [
                             {
-                                "file_path": "/var/log/argus-collector-heartbeat.log",
+                                "file_path": "/var/log/tracaus-collector-heartbeat.log",
                                 "log_group_name": f"{log_prefix(spec)}/{instance['id']}/{next(s['heartbeat_log_group'] for s in spec['observability']['services'] if s['instance_id'] == instance['id'])}",
                                 "log_stream_name": instance["id"],
                                 "retention_in_days": spec["log_retention_days"],

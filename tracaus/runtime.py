@@ -12,10 +12,10 @@ from pathlib import Path
 import boto3
 from botocore.config import Config
 
-from argus import diagnosis, model_api, safety
-from argus.telemetry import emit
-from argus.time import iso_utc, parse_utc
-from argus.transport import clip_utf8
+from tracaus import diagnosis, model_api, safety
+from tracaus.telemetry import emit
+from tracaus.time import iso_utc, parse_utc
+from tracaus.transport import clip_utf8
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNTERS = ("tokens_reserved", "model_steps", "tool_calls", "log_queries")
@@ -277,7 +277,7 @@ def run(
     "tool:fetch_metrics", "tool" and "checking". It never receives model, log or user text."""
     if (
         os.getenv("ENVIRONMENT", "development") != "development"
-        and os.getenv("ARGUS_DIAGNOSTIC_POLICY") != diagnosis.VERSION
+        and os.getenv("TRACAUS_DIAGNOSTIC_POLICY") != diagnosis.VERSION
     ):
         raise RuntimeStop("DIAGNOSTIC_POLICY_UNAVAILABLE")
     client = client or model_api.from_env() or sdk_client("bedrock-runtime", region)
@@ -287,7 +287,7 @@ def run(
         if m.get("role") in {"user", "assistant"} and isinstance(m.get("content"), str) and m["content"]
     ]
     messages.append({"role": "user", "content": [{"text": safety.text(prompt)}]})
-    structured = os.getenv("ARGUS_DIAGNOSTIC_POLICY") == diagnosis.VERSION
+    structured = os.getenv("TRACAUS_DIAGNOSTIC_POLICY") == diagnosis.VERSION
     catalog = []
     system = [
         {

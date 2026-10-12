@@ -1,6 +1,6 @@
 # Diagnostic evaluations
 
-This is the one guide to Argus's evaluation suite. The suite is `diagnostics-v1`. It holds 16 synthetic cases in
+This is the one guide to Tracaus's evaluation suite. The suite is `diagnostics-v1`. It holds 16 synthetic cases in
 `cases.json`. Each case has a prompt, the fake evidence the investigation tools would return, a reference answer
 and the grade that answer should get (`VALID` or `REJECTED`). The evidence is fake logs and metric descriptors in the
 real tool response format. It holds no customer data or credentials. The diagnosis checker (`diagnosis-v1`) and the
@@ -60,7 +60,7 @@ AgentCore.
 
 **Limits.** A reservation is the counted input plus the output ceiling for each model step, and it is never refunded.
 When the whole-run cap is used up, the remaining runs stop with `EVALUATION_BUDGET_EXHAUSTED` and count as failures.
-Nothing is retried. Each run also uses Argus's default chat limits: up to 24,000 reserved tokens (less if your cap is
+Nothing is retried. Each run also uses Tracaus's default chat limits: up to 24,000 reserved tokens (less if your cap is
 smaller), 6 model steps, 6 tool calls, 12 log queries, 1,024 output tokens per step and a 180-second deadline. A small
 cap can run out before all runs finish, so check the failures before you approve another run. An AWS or provider error,
 such as access denied or a rate limit, ends the whole run with exit 2 and saves no results, though calls already made
@@ -94,7 +94,7 @@ export MODEL_API='{"protocol":"openai","base_url":"https://api.example.com/v1", 
 
 An invalid `MODEL_API` ends the run with exit 2 before any model call. Caveats:
 
-- **Token accounting is not qualified.** An OpenAI-compatible provider has no token-count call, so Argus reserves a
+- **Token accounting is not qualified.** An OpenAI-compatible provider has no token-count call, so Tracaus reserves a
   local estimate (UTF-8 bytes divided by `bytes_per_token`, plus 64). It is not an upper bound, so the whole-run token
   cap is only as good as that estimate. If the provider reports more input than reserved, or no usage, that run stops
   with `TOKEN_ACCOUNTING_MISMATCH` and counts as a failure. The stop comes after the call, which is already billed. The

@@ -1,10 +1,10 @@
-# Deploy Argus in your AWS account
+# Deploy Tracaus in your AWS account
 
 > **Status.** The deployment tools have only been tested locally. They have never been run
 > against a real AWS account, so expect rough edges. Deploy to a staging environment first,
 > start with a small pilot, and do not treat the result as production-ready.
 
-Argus runs in your own AWS account. You run the deployment commands from your own workstation,
+Tracaus runs in your own AWS account. You run the deployment commands from your own workstation,
 you pay the AWS bill, and the maintainers operate nothing. This is the only deployment guide.
 Follow it in order, from an empty account to a first working UI. Terms are in the
 [glossary](ARCHITECTURE.md#glossary).
@@ -25,7 +25,7 @@ The options combine freely, with two exceptions. A model API works only with `st
 tool rejects the other combination. Team mode also needs `standalone`: the UI reports a
 configuration problem for `agentcore`.
 
-Team mode is on if, and only if, the UI host sets `ARGUS_TEAM_FILE` (section 7; the launcher sets it from `--team-file`). The deployment
+Team mode is on if, and only if, the UI host sets `TRACAUS_TEAM_FILE` (section 7; the launcher sets it from `--team-file`). The deployment
 tool knows nothing about it and creates nothing for it.
 
 ## Who does what
@@ -33,10 +33,10 @@ tool knows nothing about it and creates nothing for it.
 | Who | What they do |
 | --- | --- |
 | You, the administrator | Run the commands in this guide and own the AWS bill |
-| Your AWS account | Hosts everything Argus creates: Lambda functions, queues, DynamoDB tables, S3 buckets, secrets, alarms |
-| Your monitored servers | You install the CloudWatch agent and a heartbeat on each ([SERVERS.md](SERVERS.md)). Argus never installs software on them |
+| Your AWS account | Hosts everything Tracaus creates: Lambda functions, queues, DynamoDB tables, S3 buckets, secrets, alarms |
+| Your monitored servers | You install the CloudWatch agent and a heartbeat on each ([SERVERS.md](SERVERS.md)). Tracaus never installs software on them |
 | Your mailboxes | People confirm subscription emails and check that alerts really arrive |
-| Your identity provider (IdP), optional | Only with team mode: you register Argus's web UI there and enforce MFA. Argus cannot do that for you |
+| Your identity provider (IdP), optional | Only with team mode: you register Tracaus's web UI there and enforce MFA. Tracaus cannot do that for you |
 | Your model API provider, optional | Only with a model API: you hold the account and the API key, create the secret that stores it, and pay the provider |
 
 **The whole path (default)**
@@ -62,7 +62,7 @@ check each item. Return here when its quick checklist is complete and `dry-run` 
 
 ## 2. What it costs
 
-You pay for everything Argus creates. This guide gives no price estimate, because cost depends on
+You pay for everything Tracaus creates. This guide gives no price estimate, because cost depends on
 your account, regions, model, fleet, schedules, retention and usage. Review these drivers:
 
 - Bedrock inference (model, tokens, tool calls), and AgentCore if you choose it. With a model API
@@ -72,11 +72,11 @@ your account, regions, model, fleet, schedules, retention and usage. Review thes
   and SQS.
 
 Retained storage, keys and alarms keep costing money even when investigations and observers are
-paused. Token reservations and query counts bound the work. They are not a dollar cap. Argus has
+paused. Token reservations and query counts bound the work. They are not a dollar cap. Tracaus has
 no pre-query maximum on the bytes Logs Insights scans, and billing alerts do not shut anything
 down.
 
-Before you apply, set a budget alarm for the account in AWS Budgets (Argus does not create one).
+Before you apply, set a budget alarm for the account in AWS Budgets (Tracaus does not create one).
 After one week of staging, review actual cost by service in Cost Explorer before you enable anything
 more. To pause model work and keep alerts, see
 [maintenance, pausing and spend](OPERATE.md#maintenance-pausing-and-spend).
@@ -163,7 +163,7 @@ with the configured CI/operator role credentials" otherwise.
 | Model (Bedrock, the default) | `model_id` and `model_arns` (1 to 10 ARNs of a foundation model or inference profile; a profile must belong to your account, and every model behind a profile must also be listed). If `model_id` is an ARN it must be in `model_arns`. To use a model API instead, see section 8: it replaces these fields |
 | Switches | `maintenance_mode`: keep `false` (true disables routing). `reserved_concurrency`: leave `null`. 0 needs `maintenance_mode`, and the value is only used for a headroom check |
 | Retention | `log_retention_days`: 7, 14, 30, 60, 90, 180 or 365. `log_segment`: empty, or up to 24 letters, digits, `_` or `-`, added to log group names |
-| Servers | `instances`: 1 to 10. Each needs `id` (`i-` plus 8 or 17 hex digits), `log_groups` (up to 8 names of up to 40 letters, digits, `_` or `-`, which Argus creates), `disk_path` (absolute path such as `/`), `resource_alarms`, `nginx_alarm`, `process_exe` (`null` or an executable name). Optional: `existing_log_groups`, up to 8 log groups that already exist and that Argus only reads (see [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist)), and `log_files`, up to 16 files the generated agent file ships (see [SERVERS.md](SERVERS.md#step-1-install-the-cloudwatch-agent)). Each instance needs at least one group of either kind |
+| Servers | `instances`: 1 to 10. Each needs `id` (`i-` plus 8 or 17 hex digits), `log_groups` (up to 8 names of up to 40 letters, digits, `_` or `-`, which Tracaus creates), `disk_path` (absolute path such as `/`), `resource_alarms`, `nginx_alarm`, `process_exe` (`null` or an executable name). Optional: `existing_log_groups`, up to 8 log groups that already exist and that Tracaus only reads (see [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist)), and `log_files`, up to 16 files the generated agent file ships (see [SERVERS.md](SERVERS.md#step-1-install-the-cloudwatch-agent)). Each instance needs at least one group of either kind |
 | Nginx | `nginx_filters.access` and `.error`, each with `pattern`, `match` (a sample line that must match) and `miss` (one that must not). Required even if no instance uses Nginx. See [SERVERS.md](SERVERS.md) |
 
 The telemetry must match the inventory exactly: instance IDs, log groups, metric dimensions
@@ -174,7 +174,7 @@ and configuring agents stays your job.
 
 | Group | Settings and rules |
 | --- | --- |
-| Alerts | `status_base_url`: a fixed `https://` URL. `fallback_email` (optional): one address for the two fallback topics, which carry alarms about Argus's own pipeline. Omit it and those topics use the same addresses as the reports |
+| Alerts | `status_base_url`: a fixed `https://` URL. `fallback_email` (optional): one address for the two fallback topics, which carry alarms about Tracaus's own pipeline. Omit it and those topics use the same addresses as the reports |
 | Retention and capacity | `retention_days`: 7 to 365. `initial_reserved_concurrency`: 2 to 1000 (capacity kept for initial notifications) |
 | Repeated alarms | `incident_cooldown_minutes` (optional): 0 to 120, default 15. One open incident per instance: later alarms inside the window are stored and counted on it, with no new investigation or email. 0 investigates every alarm ([OPERATE.md](OPERATE.md#repeated-and-overlapping-alarms)) |
 | Model pause | `investigation_paused`: must be `true`. The tool rejects `false`: "Initial deployment must keep investigation_paused true; activation is a separate qualified release" |
@@ -205,8 +205,8 @@ release. Every field is required:
 service on an instance shares one. The whole block can be at most 2500 bytes.
 
 **No roles yet? Create them with one template.** Write the three role ARNs you want into
-`deployment.json` first (any names, for example `role/argus-staging-operator`,
-`role/argus-staging-cfn-execution` and `role/argus-staging-ui`). Then render the template. It makes no
+`deployment.json` first (any names, for example `role/tracaus-staging-operator`,
+`role/tracaus-staging-cfn-execution` and `role/tracaus-staging-ui`). Then render the template. It makes no
 AWS call:
 
 ```bash
@@ -227,7 +227,7 @@ profile example in [PREREQUISITES.md](PREREQUISITES.md#34-profiles)).
 | --- | --- |
 | `--operator-trust ARN`, `--ui-trust ARN` | Who may assume the operator role and the UI principal role. Repeat the option for several. The default is your whole account (`arn:aws:iam::ACCOUNT:root`), which still needs an IAM policy that allows `sts:AssumeRole`. Narrow it to your administrators and the people who run the UI |
 | `--agentcore` | Adds the AgentCore runtime actions to the execution role. Use it only with `runtime_target` `agentcore` |
-| `--instance-role` | Also creates an instance role and profile for the monitored servers: AWS's `CloudWatchAgentServerPolicy` plus a deny on creating log groups under your project path, so only Argus's stack creates them. Attach the profile to each instance |
+| `--instance-role` | Also creates an instance role and profile for the monitored servers: AWS's `CloudWatchAgentServerPolicy` plus a deny on creating log groups under your project path, so only Tracaus's stack creates them. Attach the profile to each instance |
 
 What the roles can do:
 
@@ -239,7 +239,7 @@ What the roles can do:
   resources whose names start with `PROJECT-ENVIRONMENT-`, and IAM roles only under the path
   `/PROJECT/ENVIRONMENT/`, with inline policies and no managed-policy attachment. Because it can create
   roles, treat it as a powerful role and keep the stack's template review (`dry-run`) in the process.
-- **UI principal.** May only assume the role Argus generates for the UI.
+- **UI principal.** May only assume the role Tracaus generates for the UI.
 
 The template allows more than the screened actions where an update or delete needs it (for example
 `s3:*` on the project buckets) but always within the name prefix, except for the few APIs that accept
@@ -517,7 +517,7 @@ public places.
 | "Confirm the subscription emails sent to the addresses configured as ..." | `WAITING`, exit 2. A subscription email is still unconfirmed. Click the link in each one, then resume with the same plan hash (3.7 B) |
 | "Required metric unavailable: ID", "Required evidence log group is absent", "Required access metric filter failed its positive/negative fixtures", "Access filter does not cover declared failed-request statuses" | Telemetry is not yet as declared. See [SERVERS.md](SERVERS.md), then resume with `--retry-canary` (3.7 C) |
 | "Canary requires explicit paid invocation authorization in staging" | The canary needs `environment: staging` and `--allow-model-invocation` |
-| "Owned runtime canary failed", "Canary did not prove both successful tool contracts and model completion" | The function failed or the run stopped early. Read the staging Investigate function's CloudWatch logs in the monitor region. With a model API, common causes are an API host that Lambda cannot reach, a rejected key, a model without tool calling, or a token report that fails Argus's accounting check (8.1). The failed canary is ambiguous (3.7 C) |
+| "Owned runtime canary failed", "Canary did not prove both successful tool contracts and model completion" | The function failed or the run stopped early. Read the staging Investigate function's CloudWatch logs in the monitor region. With a model API, common causes are an API host that Lambda cannot reach, a rejected key, a model without tool calling, or a token report that fails Tracaus's accounting check (8.1). The failed canary is ambiguous (3.7 C) |
 | "Canary receipt expired/differs", "Previous paid canary outcome is ambiguous" | See 3.7 C |
 | "Legacy resource retirement requires separate review" | Review the named alarms or subscriptions by hand. The tool never deletes them |
 | "Routing includes an unexpected or unconfirmed subscriber" | A subscriber differs from the plan, for example another address or protocol, or one that is missing or unsubscribed. This stays `FAILED`. Correct it, then resume. A pending email alone waits instead (3.7 B) |
@@ -545,7 +545,7 @@ public places.
 
 Team mode lets several people share one UI, each with their own sign-in and their own list of
 instances. It needs no AWS resources and no deployment step. You write one small file on the
-machine that runs the UI. It is on when `ARGUS_TEAM_FILE` is set; otherwise the UI uses the single
+machine that runs the UI. It is on when `TRACAUS_TEAM_FILE` is set; otherwise the UI uses the single
 shared password. It has only been tested offline. It has never been run against a real identity
 provider, and whether yours sends the claims it needs cannot be checked offline.
 
@@ -553,7 +553,7 @@ provider, and whether yours sends the claims it needs cannot be checked offline.
 
 - People sign in through your identity provider, with the multi-factor sign-in it enforces.
 - A `team.toml` file lists who may use which instances, as a viewer or an investigator.
-- Chat runs in the UI process with the UI role's credentials, as in default mode. Argus checks each
+- Chat runs in the UI process with the UI role's credentials, as in default mode. Tracaus checks each
   person's instance list in code. IAM does not. One AWS role serves everyone, so anyone who can run
   code in the UI process or read its environment holds that role.
 - Team mode needs `RUNTIME_TARGET=standalone`. With `agentcore` the UI reports "Team mode needs
@@ -570,7 +570,7 @@ provider, and whether yours sends the claims it needs cannot be checked offline.
   needs your HTTPS hostname (7.6).
 - Enforce MFA. The signed ID token must carry `iss`, a stable `sub`, an `auth_time` timestamp (or
   `iat`, if your provider sends no `auth_time`) and, unless you set `require_mfa = false` (7.4),
-  an `amr` list that contains `mfa`. Argus refuses a sign-in older than `session_hours`.
+  an `amr` list that contains `mfa`. Tracaus refuses a sign-in older than `session_hours`.
 - Note the issuer. It goes into `team.toml` (7.4) and must equal the token's `iss` value.
 
 ### 7.3 Write the sign-in settings
@@ -641,7 +641,7 @@ Give the UI an AWS profile as in section 4, step 1. Then launch it with the team
 python scripts/run_customer_ui.py --connection .local/customer/ui-connection.json --profile customer-ui --team-file /path/to/team.toml
 ```
 
-Only `--team-file` turns team mode on: the launcher ignores a `ARGUS_TEAM_FILE` that you exported
+Only `--team-file` turns team mode on: the launcher ignores a `TRACAUS_TEAM_FILE` that you exported
 in your shell. The path must be a regular file, not a symlink, and not writable by group or
 others. The launcher removes `APP_PASSWORD`, so the shared password never works in this mode. It
 binds the UI to `127.0.0.1`, reads no `.env`, and copies no AWS credentials.
@@ -677,14 +677,14 @@ sign-in again.
 ## 8. Optional: use a model API instead of Bedrock
 
 The default model provider is Amazon Bedrock. Choose this option only if you must use another
-provider. Argus then calls a model over HTTPS, in one of two protocols:
+provider. Tracaus then calls a model over HTTPS, in one of two protocols:
 
 - `openai`: an OpenAI-compatible Chat Completions endpoint.
 - `anthropic`: the Anthropic Messages API.
 
 It works only with the `standalone` runtime. AgentCore stays Bedrock only, and the tool rejects
 `model_api` together with `agentcore`. The API key lives in AWS Secrets Manager. You create that
-secret yourself, and Argus never writes it.
+secret yourself, and Tracaus never writes it.
 
 ### 8.1 Read this first: what you accept
 
@@ -692,19 +692,19 @@ secret yourself, and Argus never writes it.
   They are sent over HTTPS to the provider you name. Redaction is best-effort, not a guarantee.
   Read the provider's terms for retention, training use and data location before you start.
 - **Cost, quotas, rate limits, retention and outages belong to the provider.** They are not on
-  your AWS bill, and an AWS budget alarm does not see them. Argus's token limits are not a dollar
+  your AWS bill, and an AWS budget alarm does not see them. Tracaus's token limits are not a dollar
   cap.
 - **Token accounting is weaker than with Bedrock.**
-  - `anthropic`: Argus asks the provider's `count_tokens` endpoint before each call. Anthropic
-    documents that count as an estimate. After the call, Argus checks the input tokens the provider
+  - `anthropic`: Tracaus asks the provider's `count_tokens` endpoint before each call. Anthropic
+    documents that count as an estimate. After the call, Tracaus checks the input tokens the provider
     billed against that count.
-  - `openai`: there is no count endpoint. Argus reserves a local estimate: the request size in
+  - `openai`: there is no count endpoint. Tracaus reserves a local estimate: the request size in
     UTF-8 bytes divided by `bytes_per_token` (default 3), plus 64. This is **not an upper bound**.
     A lower `bytes_per_token` reserves more. If the provider later reports more prompt tokens than
-    the estimate, Argus stops the run (it fails closed). Those tokens are already billed.
+    the estimate, Tracaus stops the run (it fails closed). Those tokens are already billed.
   - A response that reports no token usage stops the run. So does a response that reports
     prompt-cache tokens.
-  - Some older OpenAI-compatible servers ignore `max_completion_tokens`. Argus stops a run when the
+  - Some older OpenAI-compatible servers ignore `max_completion_tokens`. Tracaus stops a run when the
     reported output is above its limit.
 - **It is not proven.** The model API code has only been tested offline against fakes. It has never
   been run against a live provider. How well non-Claude models diagnose incidents has not been
@@ -712,7 +712,7 @@ secret yourself, and Argus never writes it.
   evaluation with the `MODEL_API` setting in your shell
   ([evaluations/diagnostics/README.md](../evaluations/diagnostics/README.md)). After `apply`
   finishes, `ui-connection.json` holds the exact `MODEL_API` value.
-- **Network.** Argus's Lambda functions have public internet egress (this project puts none in a
+- **Network.** Tracaus's Lambda functions have public internet egress (this project puts none in a
   VPC), so the API host must be reachable from them. Chat runs in the UI process,
   so the machine that runs the UI must reach the API host too, and the UI role can read the key
   version.
@@ -736,23 +736,23 @@ Delete `model_arns` (it is forbidden with a model API). Set these fields instead
 | `model_provider` | `model_api`. The default is `bedrock` |
 | `model_id` | The provider's model name: 1 to 128 characters (letters, digits, `.`, `_`, `:`, `/`, `-`), starting with a letter or digit |
 | `model_api.protocol` | `openai` or `anthropic` |
-| `model_api.base_url` | `https://` plus a DNS host name with a dot, then an optional path of letters, digits and `. _ ~ / -`. No IP address, port, user info, query, fragment or `localhost`. Keep it under 256 characters. Argus adds the endpoint path itself: `openai` appends `/chat/completions` (so the URL usually ends in `/v1`), `anthropic` appends `/v1/messages` (so it usually has no `/v1`). Redirects are not followed, so give the final URL |
+| `model_api.base_url` | `https://` plus a DNS host name with a dot, then an optional path of letters, digits and `. _ ~ / -`. No IP address, port, user info, query, fragment or `localhost`. Keep it under 256 characters. Tracaus adds the endpoint path itself: `openai` appends `/chat/completions` (so the URL usually ends in `/v1`), `anthropic` appends `/v1/messages` (so it usually has no `/v1`). Redirects are not followed, so give the final URL |
 | `model_api.bytes_per_token` | Optional, `openai` only: a number from 1 to 8. The default is 3 |
 | `model_arns` | Required with Bedrock. Must be absent with `model_api` |
 | `bedrock_region` | Still required. It is where the tool functions and the key secret live |
 
 ### 8.3 Create the API key secret
 
-You do this once, before `check`. Argus never creates or edits the secret.
+You do this once, before `check`. Tracaus never creates or edits the secret.
 
 - **Name:** exactly `PROJECT-ENVIRONMENT/model-api-key`, using your `project` and `environment`
-  (for example `argus-staging/model-api-key`).
+  (for example `tracaus-staging/model-api-key`).
 - **Place:** your `account_id`, in `bedrock_region`. AWS adds a 6-character suffix to the ARN, so
-  the ARN reads `...:secret:PROJECT-ENVIRONMENT/model-api-key-XXXXXX`. Argus rejects any other ARN.
+  the ARN reads `...:secret:PROJECT-ENVIRONMENT/model-api-key-XXXXXX`. Tracaus rejects any other ARN.
 - **Value:** the bare API key and nothing else: no JSON, no spaces, no quotes. It must be 8 to 4096
   printable ASCII characters.
 - **Versions:** exactly one version labelled `AWSCURRENT`. A new secret has one.
-- **Encryption:** use the default key. Argus adds no KMS permission for this secret, so a secret
+- **Encryption:** use the default key. Tracaus adds no KMS permission for this secret, so a secret
   under your own KMS key needs decrypt rights that you add yourself.
 
 Use credentials that may create secrets (add `--profile NAME` if needed). This keeps the key out of
@@ -811,7 +811,7 @@ A release reads the exact secret version it was pinned to, so rotation means a n
 
 ### 8.6 Qualify it
 
-The paid staging canary (3.7) shows that the key, the endpoint, tool calling and Argus's token checks
+The paid staging canary (3.7) shows that the key, the endpoint, tool calling and Tracaus's token checks
 work together. Do not skip it. Then run the diagnostics evaluation with the `MODEL_API` setting in
 your shell, and have a named person read the results
 ([evaluations/diagnostics/README.md](../evaluations/diagnostics/README.md)).
@@ -935,7 +935,7 @@ queue receipt. A new recipient voids an attestation, so repeat it at least every
 (`foundation.EvidenceBucket`).
 
 - Default mode: set `APP_PASSWORD` (at least 12 characters).
-- Team mode: set `ARGUS_TEAM_FILE` to the absolute path of your `team.toml` (section 7). Do not set
+- Team mode: set `TRACAUS_TEAM_FILE` to the absolute path of your `team.toml` (section 7). Do not set
   `APP_PASSWORD`: team mode does not use it.
 
 Run `chmod 600 .env` (and `.streamlit/secrets.toml` with team mode), then
@@ -961,7 +961,7 @@ person on loopback. For shared use you own the hosting.
   and sign-in steps only after approval, and never share deployment credentials, passwords or
   session keys.
 
-**Existing resources.** Argus's templates create log groups, topics and storage. If a resource of
+**Existing resources.** Tracaus's templates create log groups, topics and storage. If a resource of
 the same kind already exists, decide who owns it before you apply. The tool never imports or
 takes over foreign resources, and it never deletes them. Keep immutable release stacks and
 retained evidence apart from the updateable foundations and routing.

@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from argus import status
+from tracaus import status
 
 IID = "i-0123456789abcdef0"
 OTHER = "i-0fedcba9876543210"

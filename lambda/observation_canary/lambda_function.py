@@ -1,6 +1,6 @@
 """Customer-owned observation observation entrypoint."""
 
-from argus.observability import canary_sender
+from tracaus.observability import canary_sender
 
 
 def lambda_handler(event, context):

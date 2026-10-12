@@ -8,12 +8,12 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from argus import local_tools
-from argus.config import AppConfig
-from argus.runtime import LambdaTools, Limits, RuntimeStop
 from tests.helpers import LOCAL_A, LOCAL_B, local_tools_value, write_local_tools
+from tracaus import local_tools
+from tracaus.config import AppConfig
+from tracaus.runtime import LambdaTools, Limits, RuntimeStop
 
-PREFIX = "/argus/staging"
+PREFIX = "/tracaus/staging"
 SENTINEL = "SENTINEL-DO-NOT-ECHO"
 
 
@@ -58,7 +58,7 @@ def too_many_instances():
         ({"version": "1"}, "version"),
         ({"monitor_region": SENTINEL}, "monitor_region"),
         ({"log_prefix": SENTINEL}, "log_prefix"),
-        ({"log_prefix": "/argus/staging/"}, "log_prefix"),
+        ({"log_prefix": "/tracaus/staging/"}, "log_prefix"),
         ({"instances": []}, "instances"),
         ({"instances": [SENTINEL]}, "instances"),
         ({"instances": [LOCAL_A, LOCAL_A]}, "instances"),
@@ -113,8 +113,8 @@ def test_tools_are_the_unmodified_runtime_class_with_synthetic_numeric_arns(conf
     tools = tools_for(config)
     assert type(tools) is LambdaTools and isinstance(tools.client, local_tools.LocalLambdaClient)
     assert tools.arns == {
-        "fetch_logs": "arn:aws:lambda:eu-central-1:123456789012:function:argus-local-fetch_logs:1",
-        "fetch_metrics": "arn:aws:lambda:eu-central-1:123456789012:function:argus-local-fetch_metrics:1",
+        "fetch_logs": "arn:aws:lambda:eu-central-1:123456789012:function:tracaus-local-fetch_logs:1",
+        "fetch_metrics": "arn:aws:lambda:eu-central-1:123456789012:function:tracaus-local-fetch_metrics:1",
     }
     assert tools_for(config).client is tools.client  # one temp directory per distinct file
 
@@ -122,7 +122,7 @@ def test_tools_are_the_unmodified_runtime_class_with_synthetic_numeric_arns(conf
 def test_handlers_are_loaded_privately_and_never_registered_as_lambda_function(config):
     client = config.client()
     assert "lambda_function" not in sys.modules
-    assert not [name for name in sys.modules if name.startswith("argus_local")]
+    assert not [name for name in sys.modules if name.startswith("tracaus_local")]
     logs, metrics = client.modules["fetch_logs"], client.modules["fetch_metrics"]
     assert logs is not metrics and (logs.MONITOR_REGION, metrics.MONITOR_REGION) == ("eu-central-1",) * 2
     assert logs.LOG_GROUP_PREFIX == PREFIX
@@ -140,7 +140,7 @@ def test_scope_files_are_private_and_the_environment_is_only_set_during_the_call
     monkeypatch.setattr(client.modules["fetch_logs"], "lambda_handler", spy)
     monkeypatch.delenv("LOG_CURSOR_SECRET")
     before = dict(os.environ)
-    function = "arn:aws:lambda:eu-central-1:123456789012:function:argus-local-fetch_logs:1"
+    function = "arn:aws:lambda:eu-central-1:123456789012:function:tracaus-local-fetch_logs:1"
     response = client.invoke(FunctionName=function, InvocationType="RequestResponse", Payload=b"{}")
     assert response["StatusCode"] == 200 and "FunctionError" not in response
     assert json.loads(response["Payload"].read()) == {"messageVersion": "1.0"}
@@ -156,7 +156,7 @@ def test_scope_files_are_private_and_the_environment_is_only_set_during_the_call
 
 def test_client_rejects_unknown_functions_and_async_invocation(config):
     client = config.client()
-    function = "arn:aws:lambda:eu-central-1:123456789012:function:argus-local-fetch_logs:1"
+    function = "arn:aws:lambda:eu-central-1:123456789012:function:tracaus-local-fetch_logs:1"
     with pytest.raises(ValueError):
         client.invoke(
             FunctionName=function.replace("fetch_logs", "other"),
@@ -294,7 +294,7 @@ def local_env(monkeypatch, tmp_path):
         "EXPECTED_ACCOUNT_ID": "123456789012",
         "BEDROCK_MODEL_ID": "fixture-model",
         "RUNTIME_LIMITS": json.dumps(Limits().__dict__),
-        "ARGUS_LOCAL_TOOLS": write_local_tools(tmp_path),
+        "TRACAUS_LOCAL_TOOLS": write_local_tools(tmp_path),
     }.items():
         monkeypatch.setenv(key, value)
     for key in (
@@ -342,10 +342,10 @@ def test_problems_rejects_each_unsafe_combination(local_env, monkeypatch, key, v
 
 
 def test_problems_reports_a_missing_or_invalid_file_without_its_contents(local_env, monkeypatch, tmp_path):
-    monkeypatch.setenv("ARGUS_LOCAL_TOOLS", str(tmp_path / "missing.json"))
-    assert any("ARGUS_LOCAL_TOOLS" in item for item in local_tools.problems(AppConfig.from_env()))
+    monkeypatch.setenv("TRACAUS_LOCAL_TOOLS", str(tmp_path / "missing.json"))
+    assert any("TRACAUS_LOCAL_TOOLS" in item for item in local_tools.problems(AppConfig.from_env()))
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps(local_tools_value(monitor_region=SENTINEL)))
-    monkeypatch.setenv("ARGUS_LOCAL_TOOLS", str(bad))
+    monkeypatch.setenv("TRACAUS_LOCAL_TOOLS", str(bad))
     found = local_tools.problems(AppConfig.from_env())
     assert any("monitor_region" in item for item in found) and SENTINEL not in " ".join(found)

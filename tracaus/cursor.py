@@ -11,7 +11,7 @@ from functools import lru_cache
 import boto3
 from botocore.config import Config
 
-from argus.transport import dumps
+from tracaus.transport import dumps
 
 
 def scope(instance_id, prefix, region):

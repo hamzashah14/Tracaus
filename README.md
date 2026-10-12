@@ -1,18 +1,18 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/argus-logo-white.png">
-  <img alt="Argus" src="assets/argus-logo-black.png" width="240">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/tracaus-logo-white.png">
+  <img alt="Tracaus" src="assets/tracaus-logo-black.png" width="240">
 </picture>
 
-# Argus: an AIOps assistant for your EC2 servers
+# Tracaus: an AIOps assistant for your EC2 servers
 
-When a CloudWatch alarm fires, Argus reads the logs and metrics of the affected
+When a CloudWatch alarm fires, Tracaus reads the logs and metrics of the affected
 server, asks an AI model (Amazon Bedrock by default) to reason over that evidence,
 and writes a short report that separates what was observed from what is only a
 guess. You get the alert first and a link to the report when it is ready. You can
 also ask questions in a web chat. You run all of it in your own AWS account.
 
 - **Read-only.** Its tools only read CloudWatch logs and metrics for the EC2 instances you list.
-- **No automatic fixes.** Argus suggests; a person decides and acts.
+- **No automatic fixes.** Tracaus suggests; a person decides and acts.
 - **Your account.** Everything is deployed and operated by you, in your AWS regions.
 - **You pay for what you use.** AWS bills Bedrock, CloudWatch, Lambda and the other services to you. A Model API provider, if you pick one, bills you separately.
 - **No hosted service.** There is no maintainer account, control plane or subscription.
@@ -88,20 +88,20 @@ its own process with your AWS credentials. You skip the tool Lambdas and `infra.
    generate it from a `deployment.json` (the shape of `examples/deployment.example.json`).
    Generating makes no AWS call and will not overwrite a file without `--force`:
    `mkdir -p .local && python scripts/make_local_tools.py --spec deployment.json --out .local/local-tools.json`
-2. In `.env`, set `ARGUS_LOCAL_TOOLS=.local/local-tools.json`, `APP_PASSWORD`, `BEDROCK_REGION`,
+2. In `.env`, set `TRACAUS_LOCAL_TOOLS=.local/local-tools.json`, `APP_PASSWORD`, `BEDROCK_REGION`,
    `BEDROCK_MODEL_ID` and `EXPECTED_ACCOUNT_ID`. Keep `ENVIRONMENT=development` and the prefilled
    `RUNTIME_LIMITS`. Leave `LOGS_TOOL_ARN`, `METRICS_TOOL_ARN` and `RUNTIME_RELEASE` empty.
 3. Use a read-only AWS profile (`AWS_PROFILE` in `.env`, or an SSO sign-in) with
    `logs:DescribeLogGroups`, `logs:StartQuery` (billable), `logs:GetQueryResults`,
    `logs:StopQuery`, `cloudwatch:GetMetricStatistics`, and `bedrock:InvokeModel` and
-   `bedrock:CountTokens` on your model. Argus does not check that it matches `EXPECTED_ACCOUNT_ID`.
+   `bedrock:CountTokens` on your model. Tracaus does not check that it matches `EXPECTED_ACCOUNT_ID`.
 4. Run `streamlit run app.py --server.address 127.0.0.1` and sign in. "Connection details"
    shows "Local tools (this machine's AWS credentials)".
 
 **Limits.** The tools read log groups named `<log_prefix>/<instance-id>/<suffix>`, the
 layout of the agent file in [SERVERS.md](docs/SERVERS.md), and the groups you list under
 `existing_log_groups` ([SERVERS.md](docs/SERVERS.md#use-log-groups-that-already-exist)). Any other
-group, such as `/aws/lambda/...`, is out of reach. The UI process holds your read credentials, so Argus's checks run in code and
+group, such as `/aws/lambda/...`, is out of reach. The UI process holds your read credentials, so Tracaus's checks run in code and
 IAM does not back them up. Keep the UI on `127.0.0.1`. Use the deployed tools for anything
 shared or production. This mode has never run against real AWS either.
 
@@ -149,7 +149,7 @@ pause investigations and stop chat ([operations](docs/OPERATE.md)).
 
 ## FAQ
 
-**Does Argus change my servers?** No. Its tools only read CloudWatch logs and
+**Does Tracaus change my servers?** No. Its tools only read CloudWatch logs and
 metrics, and recommendations are text for a person to review. Setup does create
 AWS resources of its own, and you install the CloudWatch agent on your servers
 yourself ([server setup](docs/SERVERS.md)).
@@ -172,13 +172,13 @@ Amazon Bedrock in your account and region. With a Model API, those excerpts and 
 questions you type leave your AWS account for the provider's HTTPS endpoint. That
 provider sets its own retention and quotas and bills you. Reports are stored in a
 private, versioned S3 bucket you own. Output is redacted by pattern matching before
-it returns to the model or is stored; this is best effort, not a guarantee. Argus
+it returns to the model or is stored; this is best effort, not a guarantee. Tracaus
 makes no calls to the maintainers, and Streamlit usage statistics are turned off.
 
 **Can I use a model other than Bedrock?** Yes, on standalone Lambda: an
 OpenAI-compatible endpoint with tool calling, or the Anthropic Messages API. Run the
 paid staging canary and the [diagnostic evaluation](evaluations/diagnostics/README.md)
-against it first. An OpenAI-compatible endpoint has no token-count call, so Argus
+against it first. An OpenAI-compatible endpoint has no token-count call, so Tracaus
 reserves a local estimate that is not an upper bound. It stops the run if the provider
 reports more input than estimated, or no usage.
 

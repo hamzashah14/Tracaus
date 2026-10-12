@@ -1,6 +1,6 @@
 # Contributing
 
-Argus is MIT licensed. In each pull request, describe the behavior change, the
+Tracaus is MIT licensed. In each pull request, describe the behavior change, the
 validation you ran and any remaining live limits. Report suspected vulnerabilities
 privately ([SECURITY.md](SECURITY.md)), never in public issues.
 
@@ -9,10 +9,10 @@ privately ([SECURITY.md](SECURITY.md)), never in public issues.
 | Path | What it holds |
 | --- | --- |
 | `app.py`, `.streamlit/`, `.env.example` | Streamlit web UI and its settings |
-| `assets/` | Argus logos: square mark (favicon, collapsed sidebar), white wordmark for the dark UI, black wordmark for light pages |
-| `argus/` | Shared Python runtime: orchestration, tools transport, redaction, team mode, model providers |
+| `assets/` | Tracaus logos: square mark (favicon, collapsed sidebar), white wordmark for the dark UI, black wordmark for light pages |
+| `tracaus/` | Shared Python runtime: orchestration, tools transport, redaction, team mode, model providers |
 | `lambda/` | Lambda handlers: read-only tools, incident handlers, observers |
-| `argus_agentcore.py` | AgentCore entry point (Bedrock only) |
+| `tracaus_agentcore.py` | AgentCore entry point (Bedrock only) |
 | `schemas/`, `config/`, `agent-instruction.txt` | Tool contracts, default metric catalog and the model prompt. They ship inside the Lambda packages at these paths |
 | `infra/` | Template generators, deployment automation and operator commands (`python -m infra.automation`) |
 | `examples/` | Synthetic starting configs that `init` copies; cloud commands reject them until you replace them |

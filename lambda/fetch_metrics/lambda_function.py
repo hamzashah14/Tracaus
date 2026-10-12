@@ -9,9 +9,9 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from argus.metrics import resolve
-from argus.time import parse_utc
-from argus.transport import bounded_envelope, error_result, parameters
+from tracaus.metrics import resolve
+from tracaus.time import parse_utc
+from tracaus.transport import bounded_envelope, error_result, parameters
 
 MONITOR_REGION = os.environ.get("MONITOR_REGION") or os.environ.get("AWS_REGION")
 BOTO_CONFIG = Config(connect_timeout=3, read_timeout=10, retries={"total_max_attempts": 1})
@@ -158,7 +158,7 @@ def fetch(params):
 def lambda_handler(event, context):
     status = 200
     try:
-        from argus.tool_deadline import remaining
+        from tracaus.tool_deadline import remaining
 
         remaining(event, context)
         result = fetch(parameters(event))

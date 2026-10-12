@@ -5,7 +5,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from argus import model_api
+from tracaus import model_api
 
 REGION = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\d+$")
 INSTANCE = re.compile(r"^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$")
@@ -47,14 +47,14 @@ class AppConfig:
             os.getenv("AGENTCORE_RUNTIME_ARN", ""),
             os.getenv("AGENTCORE_ENDPOINT", ""),
             os.getenv("MODEL_API", ""),
-            os.getenv("ARGUS_LOCAL_TOOLS", "").strip(),
-            os.getenv("ARGUS_TEAM_FILE", ""),
+            os.getenv("TRACAUS_LOCAL_TOOLS", "").strip(),
+            os.getenv("TRACAUS_TEAM_FILE", ""),
         )
 
     def allowed_instances(self):
         """The instances this deployment may investigate: the inventory, or the local tools file."""
         if self.local_tools:
-            from argus import local_tools
+            from tracaus import local_tools
 
             return set(local_tools.load(self.local_tools).instances)
         return {item for item in self.allowed_ids.split(",") if item}
@@ -75,7 +75,7 @@ class AppConfig:
             if not self.local_tools and not re.fullmatch(r"[0-9a-f]{64}", self.runtime_release):
                 problems.append("Set the verified RUNTIME_RELEASE fingerprint.")
             try:
-                from argus.runtime import Limits
+                from tracaus.runtime import Limits
 
                 Limits(**json.loads(self.runtime_limits))
                 ids = self.allowed_ids.split(",")
@@ -93,13 +93,13 @@ class AppConfig:
                         ):
                             raise ValueError("Invalid tool version")
                 else:
-                    from argus.agentcore import validate_target
+                    from tracaus.agentcore import validate_target
 
                     validate_target(self.agentcore_arn, self.agentcore_endpoint, self.region, self.account_id)
             except (ValueError, TypeError):
                 problems.append("Set validated runtime limits, inventory and qualified execution bindings.")
         if self.local_tools:
-            from argus import local_tools
+            from tracaus import local_tools
 
             problems.extend(local_tools.problems(self))
         if self.model_api.strip():

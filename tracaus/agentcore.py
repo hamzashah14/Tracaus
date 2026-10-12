@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-from argus.runtime import RuntimeStop, sdk_client
+from tracaus.runtime import RuntimeStop, sdk_client
 
 MAX_WIRE_BYTES = 96000
 
@@ -39,7 +39,7 @@ def invoke(payload, *, arn, qualifier, region, account, session_id, deadline, cl
         # A killable process bounds SDK connection, trickling reads and buffering
         # together. Killing this client never implies cancellation at the service.
         output = run_child(
-            [sys.executable, "-m", "argus.agentcore"],
+            [sys.executable, "-m", "tracaus.agentcore"],
             json.dumps({"payload": payload, **args}, ensure_ascii=False).encode(),
             deadline,
         )

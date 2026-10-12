@@ -1,6 +1,6 @@
-# Operate Argus
+# Operate Tracaus
 
-Day-2 runbook. Argus runs in your own AWS account with no maintainer-run service, so you own every alarm, queue,
+Day-2 runbook. Tracaus runs in your own AWS account with no maintainer-run service, so you own every alarm, queue,
 secret and bill. Terms are in the [glossary](ARCHITECTURE.md#glossary). To set up or change the deployment, see
 [DEPLOY.md](DEPLOY.md). To prove a deployment works, use [ACCEPTANCE.md](ACCEPTANCE.md). These procedures follow the
 code and were tested locally with fakes. The maintainers have not rehearsed them on real AWS, so rehearse them on
@@ -9,8 +9,8 @@ staging first.
 Run every command here from the repository root with the virtual environment active
 (`source .venv/bin/activate`).
 
-Argus runs in local single-user mode by default. Parts marked "team mode only" apply when the UI host sets
-`ARGUS_TEAM_FILE` ([DEPLOY.md](DEPLOY.md#7-optional-team-mode)). Replay, alert recipients, erasure, retention,
+Tracaus runs in local single-user mode by default. Parts marked "team mode only" apply when the UI host sets
+`TRACAUS_TEAM_FILE` ([DEPLOY.md](DEPLOY.md#7-optional-team-mode)). Replay, alert recipients, erasure, retention,
 pausing and restore apply to every deployment.
 
 ## Conventions
@@ -24,13 +24,13 @@ pausing and restore apply to every deployment.
   raw logs, cloud responses or contact details in tickets, chat, CLI arguments or the repository.
 - Name a primary and backup before go-live for the service owner (each observed service's `owner`), on-call
   (`deployment-oncall` in alarm descriptions), security and data owner, and budget owner. Add an escalation route
-  that does not depend on Argus.
+  that does not depend on Tracaus.
 
 ## Respond to an alert or incident
 
 1. Record the UTC time, environment, release, bundle hash, alarm name, incident ID and safe outcome code. The alarm
    description names its owner.
-2. Check the real service from outside first. Investigation status says what Argus did, not whether your service is up.
+2. Check the real service from outside first. Investigation status says what Tracaus did, not whether your service is up.
 3. Trace in CloudWatch Logs Insights by the fields `Component`, `outcome`, `incident_id` and `fence`. Logs hold safe
    codes only (no prompts, tool payloads, URLs, contacts or AWS responses). Read the original event and checkpoints
    only from authorized private storage.
@@ -60,7 +60,7 @@ replacement model, provider, target or release on staging first.
 
 With a Model API, check the provider's status page, its quota and billing, and that the key still works. Also check
 that the secret version the release pins still exists. A provider error (authentication, rate limit, overload,
-timeout, network or an unreadable response) fails that call. Argus does not retry inside the call, because a retried
+timeout, network or an unreadable response) fails that call. Tracaus does not retry inside the call, because a retried
 billable request could be billed twice, so the durable worker retries within its limits. A run that stops with
 `TOKEN_ACCOUNTING_MISMATCH` ends incomplete with "operator review required". It means the provider's reported
 usage did not fit the reservation: more input than reserved, more output than allowed, cache charges or no usage. With
@@ -94,7 +94,7 @@ before it is published.
 ## Repeated and overlapping alarms
 
 One failure often trips several alarms (CPU, nginx errors and the process count) and a flapping alarm can fire again
-and again. Without a guard, every alarm would start its own investigation and send two emails. Argus keeps **one open
+and again. Without a guard, every alarm would start its own investigation and send two emails. Tracaus keeps **one open
 incident per instance**:
 
 - The first alarm for an instance opens an incident, investigates it and starts a window of
@@ -123,7 +123,7 @@ The `Suppressed` metric in the Pipeline namespace counts folded alarms. Not trie
   dead-letter queue (DLQ, `-dead`) that receives a message after five failed receives. There are also
   `-delivery-dead`, `-stream-dead`, `-observation-dead` and the `-observation-receipts` queue. Any DLQ message
   raises an alarm. SQS deletes messages after 14 days, so triage well before.
-- **Ledger.** The incident DynamoDB table is the authority on what Argus accepted. SQS counts are approximate and the
+- **Ledger.** The incident DynamoDB table is the authority on what Tracaus accepted. SQS counts are approximate and the
   pending-intents index is eventually consistent, so read queue age and ledger state together.
 - **Sweeps.** Four independent sweeps run every minute: pending intents, overdue incidents, expired workers and
   expired notifications. If progress stalls, read the saved `SWEEP` records and failure metrics. A manual invoke with
@@ -179,7 +179,7 @@ observers are deployed, their create-only runtime also holds both addresses, so 
 and observer runtime ([DEPLOY.md](DEPLOY.md#appendix-a-manual-commands)).
 
 1. Put the new addresses in your private settings, confirm you own the mailboxes, then re-render and review the bundle.
-2. List stale subscriptions owned by Argus's stacks (routing, durable foundation, observation foundation). Review every
+2. List stale subscriptions owned by Tracaus's stacks (routing, durable foundation, observation foundation). Review every
    topic, subscription and old address independently, then apply:
 
    ```bash
@@ -210,7 +210,7 @@ or invalid file stops the UI, and it never opens to everyone. Review the list mo
 incident or provider change. Rehearse secret rotation quarterly.
 
 **Read the audit line (team mode only).** Each chat request, report view and refused sign-in writes one JSON object
-to the UI's standard output. It has `ts`, `event` (always `argus.audit`), `sub`, `role`, `instance`, `action` and
+to the UI's standard output. It has `ts`, `event` (always `tracaus.audit`), `sub`, `role`, `instance`, `action` and
 `outcome`, plus `instance_count` and `tokens` (`input` and `output` counts only) when they apply. It never contains
 prompt, log or exception text.
 
@@ -244,9 +244,9 @@ interactive work and let accepted requests finish.
 ## Rotating the Model API key
 
 Only with a Model API provider. Each release pins the key's secret ARN and one exact `VersionId` (the `MODEL_API`
-setting). The release fingerprint covers that version, and the runtime roles may read only that version. Argus never
+setting). The release fingerprint covers that version, and the runtime roles may read only that version. Tracaus never
 picks up a newer version on its own, so a new key means a new release. The secret is named `PROJECT-ENVIRONMENT/model-api-key`
-and you create and fill it yourself. Argus's automation only reads its metadata.
+and you create and fill it yourself. Tracaus's automation only reads its metadata.
 
 1. Create the new key at the provider. Add it as a new version of the secret with your own admin credentials. Keep
    the old key valid and the old version in place, because the live release still reads them. Only the new version may
@@ -287,7 +287,7 @@ Before relying on a provider, complete the Model API items in [ACCEPTANCE.md](AC
 | Incident evidence and reports | Private versioned KMS bucket. Lifecycle and incident TTL follow `retention_days` in `runtime.json` (7 to 365). |
 | Team audit lines (team mode only) | One JSON line per event on the UI's standard output. Kept as long as your platform's log service keeps them. Subject, role, action, outcome and token counts, never prompt or log text. |
 | Raw logs and provider data | Stay in your systems. CloudWatch Logs follow `log_retention_days` in `deployment.json`. |
-| Excerpts and questions sent to a Model API provider | Held by that provider under its own terms. Argus cannot erase them. |
+| Excerpts and questions sent to a Model API provider | Held by that provider under its own terms. Tracaus cannot erase them. |
 | Erasure tombstones | 35 days live. Keep your own private purge registry through the longest backup or export window. |
 
 TTL and lifecycle cleanup are asynchronous, though live reads still deny expired records. Deleting live data does not
@@ -411,7 +411,7 @@ release. Roll back by promoting a previously qualified, compatible release throu
   redaction is best effort. Diagnosis quality on non-Claude models is unmeasured.
 - Removing a person from `team.toml` does not cancel a request already running, and upstream cancellation of
   AgentCore calls is unproven.
-- Team mode: one AWS role serves every person, and Argus's code, not IAM, enforces each person's instance list. There
+- Team mode: one AWS role serves every person, and Tracaus's code, not IAM, enforces each person's instance list. There
   is no remote logout. The hourly limit is per UI process and resets on restart. It has not been run against a real
   identity provider.
-  If the whole AWS account or region fails, Argus's alerts fail with it, so keep an external monitor and contact route.
+  If the whole AWS account or region fails, Tracaus's alerts fail with it, so keep an external monitor and contact route.

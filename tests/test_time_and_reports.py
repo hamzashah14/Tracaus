@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from argus.time import parse_utc
 from tests.helpers import load_lambda
+from tracaus.time import parse_utc
 
 logs = load_lambda("fetch_logs")
 metrics = load_lambda("fetch_metrics")

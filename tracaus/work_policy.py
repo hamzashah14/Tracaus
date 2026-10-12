@@ -2,7 +2,7 @@
 
 from dataclasses import asdict
 
-from argus.runtime import Limits
+from tracaus.runtime import Limits
 
 DEFAULT = {
     "chat_limits": asdict(

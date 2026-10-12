@@ -13,8 +13,8 @@ from boto3.dynamodb.types import TypeSerializer
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from argus import safety
-from argus.transport import dumps
+from tracaus import safety
+from tracaus.transport import dumps
 
 SERIALIZE = TypeSerializer()
 MAX_ATTEMPTS = 3
@@ -420,14 +420,14 @@ class Ledger:
             )
         except ClientError as exc:
             if conditional(exc):
-                from argus.runtime import RuntimeStop
+                from tracaus.runtime import RuntimeStop
 
                 raise RuntimeStop("STALE_OR_ALREADY_EXECUTING") from None
             raise
 
     def reserve(self, claim, limits, delta):
         """Never refund ambiguous reservations; enforce aggregate limits across attempts."""
-        from argus.runtime import COUNTERS, RuntimeStop
+        from tracaus.runtime import COUNTERS, RuntimeStop
 
         if (
             not delta

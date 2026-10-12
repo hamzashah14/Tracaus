@@ -27,11 +27,11 @@ def checked_build(directory, spec):
     if manifest.get("lock_sha256") != lock_hash:
         raise VerificationError("Dependency lock changed after build; rebuild before rendering")
     for function, item in manifest["functions"].items():
-        required = {str(p.relative_to(ROOT)) for p in (ROOT / "argus").glob("*.py")} | {
+        required = {str(p.relative_to(ROOT)) for p in (ROOT / "tracaus").glob("*.py")} | {
             "agent-instruction.txt",
             "schemas/fetch_logs.json",
             "schemas/fetch_metrics.json",
-            "argus_agentcore.py",
+            "tracaus_agentcore.py",
             "lambda_function.py",
         }
         if not required <= set(item["source_files"]):
@@ -59,10 +59,10 @@ def checked_build(directory, spec):
                 source = ROOT / (
                     f"lambda/{function}/lambda_function.py" if filename == "lambda_function.py" else filename
                 )
-                if filename.startswith(("argus/", "schemas/")) or filename in {
+                if filename.startswith(("tracaus/", "schemas/")) or filename in {
                     "lambda_function.py",
                     "agent-instruction.txt",
-                    "argus_agentcore.py",
+                    "tracaus_agentcore.py",
                 }:
                     if hashlib.sha256(source.read_bytes()).hexdigest() != expected:
                         raise VerificationError("Source changed after build; rebuild before rendering")

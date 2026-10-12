@@ -228,7 +228,7 @@ class FakeDriver(automation.Driver):
         )
         self.outputs["versions"] = versions
         self.outputs["secret"] = {
-            "arn": f"arn:aws:secretsmanager:{spec['bedrock_region']}:{spec['account_id']}:secret:argus-staging/log-cursor-123abc",
+            "arn": f"arn:aws:secretsmanager:{spec['bedrock_region']}:{spec['account_id']}:secret:tracaus-staging/log-cursor-123abc",
             "version_id": "a" * 32,
         }
         self.outputs["model_secret"] = {
@@ -297,7 +297,7 @@ class FakeDriver(automation.Driver):
                     ).FUNCTIONS.items()
                 }
             if stage == "routing":
-                return {"UiRoleArn": f"arn:aws:iam::{spec['account_id']}:role/argus/staging/ui"}
+                return {"UiRoleArn": f"arn:aws:iam::{spec['account_id']}:role/tracaus/staging/ui"}
             if stage.endswith("-runtime"):
                 suffix = stage[:-8]
                 runtime_id = name(spec, suffix, True).replace("-", "_") + "-1234567890"
@@ -724,7 +724,7 @@ def test_generated_ui_launch_uses_scoped_role_not_deployer(tmp_path, monkeypatch
                 "MONITOR_REGION": "eu-central-1",
                 "ENVIRONMENT": "staging",
             },
-            "ui_role_arn": "arn:aws:iam::123456789012:role/argus/staging/ui",
+            "ui_role_arn": "arn:aws:iam::123456789012:role/tracaus/staging/ui",
         },
     )
     session = Mock()
@@ -789,7 +789,7 @@ def test_production_candidate_does_not_bypass_staging_gate(tmp_path, monkeypatch
     directory.mkdir()
     driver = FakeDriver(planned, directory, monkeypatch)
     driver.outputs["secret"]["arn"] = (
-        "arn:aws:secretsmanager:eu-central-1:123456789012:secret:argus-production/log-cursor-123abc"
+        "arn:aws:secretsmanager:eu-central-1:123456789012:secret:tracaus-production/log-cursor-123abc"
     )
     result = automation.deploy(planned, directory, driver, allow_model=True)
     assert result["status"] == "WAITING" and "Production candidates provisioned" in result["next"]
@@ -1209,7 +1209,7 @@ def launcher_connection(tmp_path, **extra):
                 "ENVIRONMENT": "staging",
                 **extra,
             },
-            "ui_role_arn": "arn:aws:iam::123456789012:role/argus/staging/ui",
+            "ui_role_arn": "arn:aws:iam::123456789012:role/tracaus/staging/ui",
         },
     )
     session = Mock()
@@ -1271,7 +1271,7 @@ def test_launcher_team_file_turns_on_team_mode_and_drops_the_password(tmp_path, 
     code, execve = launch(tmp_path, monkeypatch, "--team-file", str(team_path))
     assert code == 0
     env = execve.call_args.args[2]
-    assert env["ARGUS_TEAM_FILE"] == str(team_path.resolve())
+    assert env["TRACAUS_TEAM_FILE"] == str(team_path.resolve())
     assert "APP_PASSWORD" not in env
 
 
@@ -1286,9 +1286,9 @@ def test_launcher_refuses_a_team_file_others_can_write(tmp_path, monkeypatch, ca
 
 
 def test_launcher_ignores_a_stray_team_file_variable(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARGUS_TEAM_FILE", str(tmp_path / "stray.toml"))
+    monkeypatch.setenv("TRACAUS_TEAM_FILE", str(tmp_path / "stray.toml"))
     result = launcher_connection(tmp_path)()
-    assert "ARGUS_TEAM_FILE" not in result
+    assert "TRACAUS_TEAM_FILE" not in result
 
 
 def run_model_secret_op(tmp_path, monkeypatch, secret, *, provider="model_api"):
@@ -1338,7 +1338,7 @@ def test_model_secret_version_op_pins_the_single_current_version_without_reading
     [
         lambda spec: model_secret(spec, {"a" * 32: ["AWSPREVIOUS"]}),
         lambda spec: model_secret(spec, {"a" * 32: ["AWSCURRENT"], "b" * 32: ["AWSCURRENT"]}),
-        lambda spec: model_secret(spec, Name="argus-staging/other"),
+        lambda spec: model_secret(spec, Name="tracaus-staging/other"),
     ],
     ids=["no_current", "two_current", "other_secret"],
 )
@@ -1565,7 +1565,7 @@ def owned_routing_resources(spec, summaries):
                 "Tags": [
                     {"Key": "Project", "Value": spec["project"]},
                     {"Key": "Environment", "Value": spec["environment"]},
-                    {"Key": "ManagedBy", "Value": "argus-cloudformation"},
+                    {"Key": "ManagedBy", "Value": "tracaus-cloudformation"},
                 ]
             }
         ]

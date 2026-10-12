@@ -10,13 +10,13 @@ from unittest.mock import MagicMock
 import pytest
 from botocore.exceptions import ClientError
 
-from argus import agentcore, agentcore_host, execution, runtime
-from argus.ledger import Ledger
+from tracaus import agentcore, agentcore_host, execution, runtime
+from tracaus.ledger import Ledger
 
 IID = "i-0123456789abcdef0"
 ACCOUNT = "123456789012"
 REGION = "eu-central-1"
-ARN = f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:runtime/argus_example-1234567890"
+ARN = f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:runtime/tracaus_example-1234567890"
 RELEASE = "a" * 64
 
 
@@ -448,7 +448,7 @@ def test_both_targets_use_owned_permissions_and_no_classic_dependency(target):
         code = stages["agentcore-runtime"]["Resources"]["Runtime"]["Properties"]["AgentRuntimeArtifact"][
             "CodeConfiguration"
         ]
-        assert code["EntryPoint"] == ["argus_agentcore.py"] and code["Code"]["S3"]["VersionId"]
+        assert code["EntryPoint"] == ["tracaus_agentcore.py"] and code["Code"]["S3"]["VersionId"]
         assert (
             stages["agentcore-endpoint"]["Resources"]["Endpoint"]["Properties"]["AgentRuntimeVersion"] == "1"
         )
@@ -500,7 +500,7 @@ def test_unsupported_remote_endpoint_denied_before_client():
 def test_remote_attempt_exception_waits_for_lease_recovery(monkeypatch):
     from unittest.mock import patch
 
-    from argus import pipeline
+    from tracaus import pipeline
 
     monkeypatch.setenv("RUNTIME_TARGET", "agentcore")
     monkeypatch.setenv("REPORT_BUCKET", "synthetic-reports")
@@ -537,7 +537,7 @@ def test_remote_attempt_exception_waits_for_lease_recovery(monkeypatch):
 def test_expired_retention_is_denied_before_any_report_read(monkeypatch):
     from unittest.mock import patch
 
-    from argus.status import load
+    from tracaus.status import load
 
     monkeypatch.setenv("INCIDENT_TABLE", "synthetic-table")
     monkeypatch.setenv("MONITOR_REGION", REGION)
@@ -587,8 +587,8 @@ def test_shared_loop_checkpoint_retains_tool_evidence_before_next_model():
 def test_chat_adapter_dispatches_selected_target_with_same_versioned_contract(monkeypatch, target):
     from unittest.mock import patch
 
-    from argus import chat
-    from argus.config import AppConfig
+    from tracaus import chat
+    from tracaus.config import AppConfig
 
     settings = AppConfig(
         REGION,
@@ -679,7 +679,7 @@ def test_runtime_verification_uses_injected_clients_for_stack_checks(monkeypatch
     "operation,outcome", [("count_tokens", "COUNT_FAILED"), ("converse", "INFERENCE_FAILED")]
 )
 def test_model_api_failure_has_safe_correlated_telemetry(operation, outcome, capsys):
-    from argus.telemetry import correlate
+    from tracaus.telemetry import correlate
 
     client = MagicMock()
     getattr(client, operation).side_effect = RuntimeError("sensitive remote details")

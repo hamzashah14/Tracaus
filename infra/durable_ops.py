@@ -534,8 +534,8 @@ def main():
         if args.command == "upload":
             value = upload(bundle, args.build_dir, args.artifact_kind)
         elif args.command == "seed-health":
-            from argus.runtime import sdk_client
             from infra.observations import seed_health
+            from tracaus.runtime import sdk_client
 
             value = seed_health(
                 bundle,

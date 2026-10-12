@@ -38,7 +38,7 @@ def environment(path, profile, *, session_factory=boto3.Session):
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
-        "ARGUS_TEAM_FILE",
+        "TRACAUS_TEAM_FILE",
     ):
         result.pop(key, None)
     result.update(values)
@@ -58,7 +58,7 @@ def main():
             team_path = args.team_file
             if team_path.is_symlink() or not team_path.is_file() or team_path.stat().st_mode & 0o022:
                 raise ValueError("Team file must be a regular file that group and others cannot write")
-            env["ARGUS_TEAM_FILE"] = str(team_path.resolve())
+            env["TRACAUS_TEAM_FILE"] = str(team_path.resolve())
             env.pop("APP_PASSWORD", None)  # Team mode signs in through the identity provider only.
         elif not env.get("APP_PASSWORD"):
             print(

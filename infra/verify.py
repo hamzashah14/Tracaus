@@ -118,7 +118,7 @@ def coverage(spec, clients):
             fixture = spec["nginx_filters"]["access"]
             import re
 
-            from argus.nginx import access_evidence
+            from tracaus.nginx import access_evidence
 
             for status in (500, 502, 503, 504):
                 sample = re.sub(r'("[^"]+") \d{3} ', rf"\g<1> {status} ", fixture["match"], count=1)

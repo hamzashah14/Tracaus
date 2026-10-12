@@ -1,5 +1,5 @@
 {
-  "project": "argus",
+  "project": "tracaus",
   "environment": "staging",
   "account_id": "123456789012",
   "monitor_region": "eu-central-1",

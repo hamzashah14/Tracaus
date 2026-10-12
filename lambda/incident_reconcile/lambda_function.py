@@ -1,6 +1,6 @@
 """Repair missed streams and expired leases."""
 
-from argus import pipeline
+from tracaus import pipeline
 
 
 def lambda_handler(event, context):

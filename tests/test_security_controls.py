@@ -10,12 +10,12 @@ from unittest.mock import Mock
 import pytest
 from botocore.exceptions import ClientError
 
-from argus import diagnosis, runtime, safety, work_policy
 from infra import owned_runtime, security_ops
 from infra.verify import VerificationError
 from scripts.dev import evaluate_diagnostics
 from tests.test_owned_runtime import BASE, SPEC, bindings
 from tests.test_runtime import answer, drive
+from tracaus import diagnosis, runtime, safety, work_policy
 
 IID = "i-0123456789abcdef0"
 
@@ -87,7 +87,7 @@ def test_hang_rejects_metrics_outside_gap_and_different_service():
 
 
 def test_model_draft_and_secret_never_enter_checkpoint_or_later_model_request(monkeypatch):
-    monkeypatch.setenv("ARGUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
+    monkeypatch.setenv("TRACAUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
     client, tools, saved = Mock(), Mock(), []
     client.count_tokens.return_value = {"inputTokens": 100}
     tools.invoke.return_value = (
@@ -137,7 +137,7 @@ def test_model_draft_and_secret_never_enter_checkpoint_or_later_model_request(mo
 
 
 def test_unstructured_model_final_never_becomes_a_complete_diagnosis(monkeypatch):
-    monkeypatch.setenv("ARGUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
+    monkeypatch.setenv("TRACAUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
     client = Mock()
     client.converse.return_value = answer("Definitely fixed; root cause guessed")
     result, _, _ = drive(client)
@@ -282,7 +282,7 @@ class EraseS3:
 
 @pytest.fixture
 def eraser():
-    from argus.governance import Erasure
+    from tracaus.governance import Erasure
 
     table, s3 = EraseTable(), EraseS3()
     return Erasure(table, s3, "synthetic", SPEC["account_id"], clock=lambda: 5000), table, s3
@@ -361,8 +361,8 @@ def test_erasure_quiescence_grace_and_all_s3_pages(eraser):
 
 
 def test_notification_replay_and_status_access_refuse_erased_incident(monkeypatch):
-    from argus.ledger import Ledger
-    from argus.status import load
+    from tracaus.ledger import Ledger
+    from tracaus.status import load
 
     table, client = Mock(), Mock()
     table.get_item.side_effect = lambda **kw: {"Item": {"status": "DELETED", "ttl": 4102444800}}
@@ -487,7 +487,7 @@ def test_pending_owned_recipient_requires_explicit_resolution(recipients):
 
 def test_production_missing_diagnostic_policy_fails_before_creating_model_client(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.delenv("ARGUS_DIAGNOSTIC_POLICY", raising=False)
+    monkeypatch.delenv("TRACAUS_DIAGNOSTIC_POLICY", raising=False)
     with pytest.raises(runtime.RuntimeStop, match="DIAGNOSTIC_POLICY_UNAVAILABLE"):
         drive()
 
@@ -635,7 +635,7 @@ def test_evaluation_evidence_matches_real_tool_response_contracts(case):
 
 
 def test_default_chat_budget_allows_full_corroborated_hang_with_discovery(monkeypatch):
-    monkeypatch.setenv("ARGUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
+    monkeypatch.setenv("TRACAUS_DIAGNOSTIC_POLICY", diagnosis.VERSION)
     case = copy.deepcopy(
         next(c for c in evaluate_diagnostics.suite()[0]["cases"] if c["id"] == "correlated-hang")
     )

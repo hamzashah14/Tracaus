@@ -218,8 +218,8 @@ def test_bedrock_fingerprint_is_unchanged_and_model_api_fingerprint_is_bound_to_
                     "agent-instruction.txt",
                     "schemas/fetch_logs.json",
                     "schemas/fetch_metrics.json",
-                    "argus/diagnosis.py",
-                    "argus/safety.py",
+                    "tracaus/diagnosis.py",
+                    "tracaus/safety.py",
                 )
             },
         }

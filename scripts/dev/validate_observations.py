@@ -43,7 +43,7 @@ def fixtures(spec, config):
 def main():
     spec = load(ROOT / "examples/observability.example.json")
     config = json.loads((ROOT / "examples/durable.example.json").read_text())
-    with tempfile.TemporaryDirectory(prefix="argus-observations-") as temp:
+    with tempfile.TemporaryDirectory(prefix="tracaus-observations-") as temp:
         files = []
         for mode in ("same", "split"):
             current = {**spec, "bedrock_region": "us-east-1" if mode == "split" else spec["bedrock_region"]}

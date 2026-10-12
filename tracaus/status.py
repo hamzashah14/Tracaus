@@ -8,7 +8,7 @@ import time
 import boto3
 from botocore.config import Config
 
-from argus import safety
+from tracaus import safety
 
 INCIDENT = re.compile(r"[0-9a-f]{32}\Z")
 READ_CONFIG = Config(connect_timeout=3, read_timeout=8, retries={"total_max_attempts": 2})

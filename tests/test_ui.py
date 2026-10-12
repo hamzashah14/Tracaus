@@ -7,9 +7,9 @@ import pytest
 import streamlit
 from streamlit.testing.v1 import AppTest
 
-from argus import chat, runtime, status, team
-from argus import status as incident_status
 from tests.helpers import ROOT
+from tracaus import chat, runtime, status, team
+from tracaus import status as incident_status
 
 
 @pytest.fixture
@@ -184,7 +184,7 @@ def test_incident_link_requires_sign_in_and_shows_authorized_report(settings, mo
 def test_brand_assets_exist_and_are_transparent_pngs():
     from PIL import Image
 
-    for name in ("argus-mark.png", "argus-logo-white.png", "argus-logo-black.png"):
+    for name in ("tracaus-mark.png", "tracaus-logo-white.png", "tracaus-logo-black.png"):
         with Image.open(ROOT / "assets" / name) as image:
             assert image.format == "PNG" and image.mode == "RGBA"
 
@@ -194,7 +194,7 @@ def test_local_tools_mode_enables_chat_without_deployed_bindings(settings, monke
 
     for key in ("RUNTIME_RELEASE", "LOGS_TOOL_ARN", "METRICS_TOOL_ARN", "ALLOWED_INSTANCE_IDS"):
         monkeypatch.delenv(key)
-    monkeypatch.setenv("ARGUS_LOCAL_TOOLS", write_local_tools(tmp_path))
+    monkeypatch.setenv("TRACAUS_LOCAL_TOOLS", write_local_tools(tmp_path))
     invoke = Mock(return_value=chat.ChatResult("Local answer", "ok"))
     monkeypatch.setattr(chat, "invoke", invoke)
     test = app().run()
@@ -209,10 +209,10 @@ def test_local_tools_mode_enables_chat_without_deployed_bindings(settings, monke
 
 
 def test_invalid_local_tools_file_keeps_chat_disabled_and_explains_why(settings, monkeypatch, tmp_path):
-    monkeypatch.setenv("ARGUS_LOCAL_TOOLS", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("TRACAUS_LOCAL_TOOLS", str(tmp_path / "missing.json"))
     test = app().run()
     assert not test.exception and test.chat_input[0].disabled
-    assert any("ARGUS_LOCAL_TOOLS" in item.value for item in test.markdown)
+    assert any("TRACAUS_LOCAL_TOOLS" in item.value for item in test.markdown)
 
 
 TEAM_IID = "i-0123456789abcdef0"
@@ -245,7 +245,7 @@ def team_mode(settings, monkeypatch, tmp_path):
     def configure(users=(("user-1", "investigator", [TEAM_IID]),), claims=None, extra="", options=None):
         path.write_text(team_text(users, extra))
         os.chmod(path, 0o600)
-        monkeypatch.setenv("ARGUS_TEAM_FILE", str(path))
+        monkeypatch.setenv("TRACAUS_TEAM_FILE", str(path))
         verified = {
             "is_logged_in": True,
             "iss": TEAM_ISSUER,
@@ -418,7 +418,10 @@ def test_a_connection_from_the_removed_identity_module_stops_the_app(settings, m
     assert not test.info  # not even the incident lookup ran
 
 
-@pytest.mark.parametrize("name", ["KIRA_TEAM_FILE", "KIRA_LOCAL_TOOLS", "KIRA_DIAGNOSTIC_POLICY"])
+@pytest.mark.parametrize(
+    "name",
+    ["KIRA_TEAM_FILE", "KIRA_LOCAL_TOOLS", "ARGUS_TEAM_FILE", "ARGUS_LOCAL_TOOLS", "ARGUS_DIAGNOSTIC_POLICY"],
+)
 def test_a_setting_with_the_old_project_name_stops_the_app(settings, monkeypatch, name):
     monkeypatch.setenv(name, "/srv/team.toml")
     test = app(False)
@@ -426,7 +429,7 @@ def test_a_setting_with_the_old_project_name_stops_the_app(settings, monkeypatch
     test.run()
     assert not test.exception and not test.text_input and not test.chat_input
     message = " ".join(item.value for item in test.error)
-    assert name in message and "ARGUS_" in message
+    assert name in message and "TRACAUS_" in message
     assert "/srv/team.toml" not in message  # names only, never values
     assert not test.info
 

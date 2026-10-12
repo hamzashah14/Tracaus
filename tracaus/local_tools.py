@@ -1,4 +1,4 @@
-"""Optional local tools mode for developers: the UI process runs Argus's own tool handlers in-process.
+"""Optional local tools mode for developers: the UI process runs Tracaus's own tool handlers in-process.
 
 Chat works with the developer's AWS credentials instead of deployed tool Lambda versions. The handlers, the
 runtime's request/response validation and the allowlists are the deployed ones; only the transport differs.
@@ -20,8 +20,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-from argus.config import INSTANCE, REGION
-from argus.metrics import validate_catalog
+from tracaus.config import INSTANCE, REGION
+from tracaus.metrics import validate_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ("fetch_logs", "fetch_metrics")
@@ -30,11 +30,11 @@ OPTIONAL = {"existing_log_groups"}
 PREFIX = re.compile(r"/[A-Za-z0-9_-]{1,64}(?:/[A-Za-z0-9_-]{1,64}){0,3}")
 GROUP = re.compile(r"[A-Za-z0-9_\-./#]{1,512}")  # fetch_logs' own pattern and CloudWatch's length limit
 FUNCTION = re.compile(
-    r"arn:aws:lambda:[a-z0-9-]+:[0-9]{12}:function:argus-local-(fetch_logs|fetch_metrics):[1-9][0-9]*"
+    r"arn:aws:lambda:[a-z0-9-]+:[0-9]{12}:function:tracaus-local-(fetch_logs|fetch_metrics):[1-9][0-9]*"
 )
 MAX_FILE_BYTES = 1 << 20
 MAX_GROUPS = 1000
-MAX_CATALOG_BYTES = 262144  # argus.metrics.catalog's own file limit
+MAX_CATALOG_BYTES = 262144  # tracaus.metrics.catalog's own file limit
 # The deployed tool Lambdas have a 120 s timeout; the runtime's own deadline still caps each call at 30 s.
 CONTEXT = SimpleNamespace(get_remaining_time_in_millis=lambda: 120_000)
 _LOCK = threading.Lock()
@@ -135,18 +135,18 @@ def problems(settings):
         found.append("Local tools require RUNTIME_TARGET=standalone.")
     if settings.logs_arn or settings.metrics_arn:
         found.append(
-            "Remove LOGS_TOOL_ARN and METRICS_TOOL_ARN: ARGUS_LOCAL_TOOLS replaces the deployed tools."
+            "Remove LOGS_TOOL_ARN and METRICS_TOOL_ARN: TRACAUS_LOCAL_TOOLS replaces the deployed tools."
         )
     if os.getenv("LOG_CURSOR_SECRET_ARN"):
         found.append("Remove LOG_CURSOR_SECRET_ARN: local tools keep their pagination secret in memory.")
     try:
         config = load(settings.local_tools)
     except ValueError as error:
-        found.append(f"Fix the ARGUS_LOCAL_TOOLS file: {error}")
+        found.append(f"Fix the TRACAUS_LOCAL_TOOLS file: {error}")
     else:
         if settings.allowed_ids and set(settings.allowed_ids.split(",")) != set(config.instances):
             found.append(
-                "ALLOWED_INSTANCE_IDS must list the same instances as the ARGUS_LOCAL_TOOLS file, or be unset."
+                "ALLOWED_INSTANCE_IDS must list the same instances as the TRACAUS_LOCAL_TOOLS file, or be unset."
             )
     return found
 
@@ -173,9 +173,9 @@ class LocalConfig:
 
     def tools(self, region, account, allowed, policy, reserve, anchor=None, access_guard=None):
         """The unmodified LambdaTools, pointed at synthetic numeric versions that this process answers."""
-        from argus.runtime import LambdaTools
+        from tracaus.runtime import LambdaTools
 
-        arns = {tool: f"arn:aws:lambda:{region}:{account}:function:argus-local-{tool}:1" for tool in TOOLS}
+        arns = {tool: f"arn:aws:lambda:{region}:{account}:function:tracaus-local-{tool}:1" for tool in TOOLS}
         return LambdaTools(
             region,
             account,
@@ -193,7 +193,7 @@ def _load(tool):
     # Both handlers are named lambda_function, so they are loaded by path under private names and never
     # registered in sys.modules or put on sys.path.
     spec = importlib.util.spec_from_file_location(
-        f"argus_local_{tool}", ROOT / "lambda" / tool / "lambda_function.py"
+        f"tracaus_local_{tool}", ROOT / "lambda" / tool / "lambda_function.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -222,7 +222,7 @@ class LocalLambdaClient:
     """
 
     def __init__(self, config):
-        self._directory = tempfile.TemporaryDirectory(prefix="argus-local-tools-")  # mkdtemp: mode 0700
+        self._directory = tempfile.TemporaryDirectory(prefix="tracaus-local-tools-")  # mkdtemp: mode 0700
         self.directory = Path(self._directory.name)
         self.env = {
             "ALLOWED_INSTANCE_IDS": ",".join(config.instances),
@@ -247,7 +247,7 @@ class LocalLambdaClient:
     def invoke(self, FunctionName, InvocationType, Payload):
         match = FUNCTION.fullmatch(FunctionName) if isinstance(FunctionName, str) else None
         if not match or InvocationType != "RequestResponse":
-            raise ValueError("Local tools answer only synchronous argus-local function versions.")
+            raise ValueError("Local tools answer only synchronous tracaus-local function versions.")
         tool = match[1]
         try:
             with _LOCK:
@@ -257,7 +257,7 @@ class LocalLambdaClient:
             body = json.dumps(envelope).encode()
         except Exception as error:
             # Same outcome as a real unhandled Lambda error: the runtime reports INVALID_TOOL_RESPONSE.
-            logging.getLogger("argus").warning("local_tool=%s error=%s", tool, type(error).__name__)
+            logging.getLogger("tracaus").warning("local_tool=%s error=%s", tool, type(error).__name__)
             return {
                 "StatusCode": 200,
                 "FunctionError": "Unhandled",

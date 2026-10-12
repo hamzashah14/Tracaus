@@ -5,10 +5,10 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from argus import chat, execution, local_tools
-from argus.config import AppConfig
-from argus.runtime import LambdaTools, Limits, RuntimeStop
 from tests.helpers import LOCAL_A, LOCAL_B, write_local_tools
+from tracaus import chat, execution, local_tools
+from tracaus.config import AppConfig
+from tracaus.runtime import LambdaTools, Limits, RuntimeStop
 
 RELEASE = "a" * 64
 
@@ -16,7 +16,7 @@ RELEASE = "a" * 64
 @pytest.fixture
 def local_env(tmp_path, monkeypatch):
     path = write_local_tools(tmp_path)
-    monkeypatch.setenv("ARGUS_LOCAL_TOOLS", path)
+    monkeypatch.setenv("TRACAUS_LOCAL_TOOLS", path)
     for key, value in {
         "ENVIRONMENT": "development",
         "BEDROCK_REGION": "eu-central-1",

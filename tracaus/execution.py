@@ -6,8 +6,8 @@ import os
 import re
 import time
 
-from argus.runtime import LambdaTools, Limits, MemoryBudget, RuntimeStop, run
-from argus.telemetry import correlate
+from tracaus.runtime import LambdaTools, Limits, MemoryBudget, RuntimeStop, run
+from tracaus.telemetry import correlate
 
 
 def required(name):
@@ -50,7 +50,7 @@ def tools(policy, reserve, instance=None, anchor=None, allowed=None, access_guar
 def execute(payload, *, store=None, checkpoint=None, local=None, allowed=None, progress=None):
     """The host derives all authorization and allowances from trusted configuration.
 
-    `local` (an argus.local_tools.LocalConfig) is passed only by the development chat path, never by hosts.
+    `local` (a tracaus.local_tools.LocalConfig) is passed only by the development chat path, never by hosts.
     `allowed` (a frozenset of instance IDs) is passed only by team mode chat; hosts never pass it.
     `progress` (a callable taking a step name) is passed only by the in-process chat path."""
     if not isinstance(payload, dict) or type(payload.get("version")) is not int or payload["version"] != 1:
@@ -84,7 +84,7 @@ def execute(payload, *, store=None, checkpoint=None, local=None, allowed=None, p
             or not math.isfinite(payload["deadline"])
         ):
             raise RuntimeStop("INVALID_EXECUTION_REQUEST")
-        from argus.pipeline import checkpoint_writer, ledger
+        from tracaus.pipeline import checkpoint_writer, ledger
 
         store = store or ledger()
         claim = store.get("INCIDENT#" + payload["incident_id"])

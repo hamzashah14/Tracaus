@@ -9,12 +9,12 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from argus.governance import Erasure
-from argus.ledger import DATABASE_CONFIG
 from infra import durable_ops, owned_runtime
 from infra.aws import clients
 from infra.spec import digest, fallback_recipients, recipients, topic_arn
 from infra.verify import VerificationError, assert_account
+from tracaus.governance import Erasure
+from tracaus.ledger import DATABASE_CONFIG
 
 
 def guard(bundle):

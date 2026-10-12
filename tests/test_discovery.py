@@ -2,10 +2,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from argus import cursor
-from argus.transport import MAX_ENVELOPE_BYTES, bounded_envelope, dumps
 from tests.helpers import body, load_lambda
 from tests.test_contracts_and_metrics import check_contract
+from tracaus import cursor
+from tracaus.transport import MAX_ENVELOPE_BYTES, bounded_envelope, dumps
 
 logs = load_lambda("fetch_logs")
 IID = "i-0123456789abcdef0"
@@ -62,12 +62,12 @@ def test_cursor_cannot_cross_scope(change):
 
 def test_cursor_tamper_expiration_and_rotation(monkeypatch):
     scope = cursor.scope(IID, "/aiops", "eu-central-1")
-    with patch("argus.cursor.time.time", return_value=100):
+    with patch("tracaus.cursor.time.time", return_value=100):
         token = cursor.encode("page", scope)
         assert cursor.decode(token, scope) == "page"
         with pytest.raises(ValueError):
             cursor.decode("!!" + token, scope)
-    with patch("argus.cursor.time.time", return_value=3701), pytest.raises(ValueError):
+    with patch("tracaus.cursor.time.time", return_value=3701), pytest.raises(ValueError):
         cursor.decode(token, scope)
     monkeypatch.setenv("LOG_CURSOR_SECRET", "another-synthetic-key-for-testing-rotation")
     with pytest.raises(ValueError):

@@ -1,6 +1,6 @@
 """Team mode: a small allowlist file says who may use which instances.
 
-Standard library only. `argus/*.py` ships in every Lambda package and is imported with
+Standard library only. `tracaus/*.py` ships in every Lambda package and is imported with
 `python -S`, so this module must not import streamlit or boto3. Streamlit's OIDC login
 authenticates the person; this module only authorizes the verified claims.
 """
@@ -190,7 +190,7 @@ def audit(sub, role, instance, action, outcome, *, instance_count=None, tokens=N
     """One JSON line on standard output. Callers pass fixed vocabulary only, never prompt or log text."""
     line = {
         "ts": int(time.time()),
-        "event": "argus.audit",
+        "event": "tracaus.audit",
         "sub": sub,
         "role": role,
         "instance": instance,

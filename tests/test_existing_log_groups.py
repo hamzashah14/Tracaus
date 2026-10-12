@@ -1,4 +1,4 @@
-"""Existing log groups: Argus reads groups that already exist and never creates them."""
+"""Existing log groups: Tracaus reads groups that already exist and never creates them."""
 
 import copy
 import hashlib
@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from argus import local_tools
 from infra import release
 from infra.spec import ROOT, existing_log_groups, load, log_groups, metric_catalog, readable_log_groups
 from infra.verify import VerificationError, coverage
@@ -16,11 +15,12 @@ from scripts.dev.validate_infrastructure import examples
 from scripts.make_local_tools import build as local_file
 from tests.helpers import body, load_lambda
 from tests.test_infrastructure import good_clients
+from tracaus import local_tools
 
 logs = load_lambda("fetch_logs")
 A, B = "i-0123456789abcdef0", "i-11111111111111111"
 WEB, WORKER = "/myapp/prod/web", "/myapp/prod/worker"
-OWN = f"/argus/staging/{A}/application"  # inside the example deployment's own log prefix
+OWN = f"/tracaus/staging/{A}/application"  # inside the example deployment's own log prefix
 
 
 def make_spec(tmp_path, existing=None, extra=None, groups=None):
@@ -65,9 +65,9 @@ def test_bad_existing_groups_are_rejected_without_echoing_values(tmp_path, exist
 
 
 def test_the_rejection_names_the_rule(tmp_path):
-    with pytest.raises(ValueError, match="not one of Argus's own groups"):
+    with pytest.raises(ValueError, match="not one of Tracaus's own groups"):
         make_spec(tmp_path, [{"name": OWN}])
-    with pytest.raises(ValueError, match="not one of Argus's own groups"):
+    with pytest.raises(ValueError, match="not one of Tracaus's own groups"):
         make_spec(tmp_path, [{"name": "application"}])  # the example's own short group name
 
 
@@ -115,11 +115,11 @@ def test_coverage_fails_closed_when_an_existing_group_is_missing(tmp_path):
 
 def packaged(tmp_path, spec, existing=None):
     """A minimal build directory that satisfies checked_build, with the packaged scope files given."""
-    names = {str(p.relative_to(ROOT)) for p in (ROOT / "argus").glob("*.py")} | {
+    names = {str(p.relative_to(ROOT)) for p in (ROOT / "tracaus").glob("*.py")} | {
         "agent-instruction.txt",
         "schemas/fetch_logs.json",
         "schemas/fetch_metrics.json",
-        "argus_agentcore.py",
+        "tracaus_agentcore.py",
     }
     lock = (ROOT / "requirements/lambda.lock").read_bytes()
     files = {name: (ROOT / name).read_bytes() for name in names}
@@ -224,7 +224,7 @@ def test_an_undeclared_group_is_refused_even_with_existing_groups_configured(dep
     client.start_query.assert_not_called()
 
 
-def test_discovery_lists_the_existing_groups_after_the_argus_ones(deployed):
+def test_discovery_lists_the_existing_groups_after_the_tracaus_ones(deployed):
     deployed({A: {WEB: "instance", WORKER: "all"}, B: {"/other/app": "instance"}})
     client = MagicMock()
     client.describe_log_groups.return_value = {"logGroups": [{"logGroupName": f"/aiops/{A}/application"}]}

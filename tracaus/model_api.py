@@ -349,7 +349,7 @@ class ModelAPI:
             {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "argus-model-api/1",
+                "User-Agent": "tracaus-model-api/1",
                 **headers,
             },
             method="POST",

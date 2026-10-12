@@ -1,6 +1,6 @@
 """SQS ingress: commit the source event and first intents atomically."""
 
-from argus import pipeline
+from tracaus import pipeline
 
 
 def lambda_handler(event, context):

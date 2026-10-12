@@ -2,7 +2,7 @@
 
 import os
 
-from argus import agentcore, execution, pipeline
+from tracaus import agentcore, execution, pipeline
 
 
 def lambda_handler(event, context):

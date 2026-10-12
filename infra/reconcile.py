@@ -60,7 +60,7 @@ def owned_resources(spec, clients):
         for k, v in {
             "Project": spec["project"],
             "Environment": spec["environment"],
-            "ManagedBy": "argus-cloudformation",
+            "ManagedBy": "tracaus-cloudformation",
         }.items()
     ):
         raise VerificationError("Routing stack ownership tags do not match")
