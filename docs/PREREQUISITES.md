@@ -148,6 +148,7 @@ cap, and nothing shuts down when a budget is crossed.
 | `deployment_role_arn` | CloudFormation execution | CloudFormation assumes it to create the resources | An `Allow` for `sts:AssumeRole` whose `Principal.Service` is the single string `cloudformation.amazonaws.com` |
 | `ui_principal_arn` | UI workload | The identity the UI runs as. Tracaus's generated UI role trusts only this role | Yours: it must let the person or workload that runs the UI assume it. `check` only confirms the role exists |
 
+- `./bin/tracaus setup` can create all three for you with one administrator-level profile, used once and only after you type `yes` ([DEPLOY.md](DEPLOY.md#guided-path-three-commands)). Everything after that runs as these roles.
 - Without existing roles, an administrator can create all three with one template: `python -m infra bootstrap-iam` ([DEPLOY.md](DEPLOY.md#33-fill-in-the-three-files)).
 - All three must be explicit, different roles in `account_id`.
 - Each ARN must match what IAM returns, path included. Otherwise: "Configured IAM role is absent or has

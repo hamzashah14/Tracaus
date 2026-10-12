@@ -6,7 +6,6 @@ import logging
 import uuid
 
 MAX_ENVELOPE_BYTES = 20_000
-SNS_MESSAGE_BYTES = 262_144
 TRUNCATION = "\n\n[truncated; additional evidence omitted]"
 
 

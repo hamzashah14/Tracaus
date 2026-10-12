@@ -75,7 +75,6 @@ def _matching(pattern, message):
 
 
 valid_disk = _matching(DISK, "Use an absolute path such as / or /data (letters, digits, / _ - only).")
-valid_exe = _matching(EXE, "Use an executable name such as nginx.")
 valid_log_file = _matching(LOG_FILE, "Use an absolute file path or pattern such as /var/log/app/*.log.")
 valid_model_id = _matching(MODEL_ID, "Use a model ID such as the one shown in the Bedrock console.")
 
@@ -660,12 +659,14 @@ class Setup:
             if set(states.values()) == {"found"}:
                 self.console.ok("All three roles exist")
                 return
-            if set(states.values()) == {"unknown"}:
+            if "unknown" in states.values():
                 if self.prompter.confirm(
-                    "roles_exist", "IAM could not be read. Do the three roles already exist?", default=False
+                    "roles_exist",
+                    "IAM could not be fully read. Do the three roles already exist?",
+                    default=False,
                 ):
                     return
-            elif "found" in states.values() and not self._stack_present():
+            if "found" in states.values() and not self._stack_present():
                 raise GuidedError(
                     "Only some of the three roles exist",
                     "the role template creates all three, so it would fail on the ones that exist",

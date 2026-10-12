@@ -564,3 +564,12 @@ def test_the_model_api_option_asks_for_the_provider_and_reminds_about_the_secret
     spec = json.loads((work / "deployment.json").read_text())
     assert spec["model_provider"] == "model_api" and "model_arns" not in spec
     assert "model-api-key" in out.getvalue()
+
+
+def test_roles_that_cannot_all_be_read_ask_instead_of_guessing(tmp_path):
+    setup, fake, _, _ = make(tmp_path, {"roles_exist": True})
+    prime(fake, roles="skip")
+    fake.on("iam", "get_role", role(ROLE_ARNS[0]))
+    fake.denied("iam", "get_role", "AccessDenied")
+    fake.on("iam", "get_role", role(ROLE_ARNS[2]))
+    assert setup.run() == 0

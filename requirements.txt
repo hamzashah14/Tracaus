@@ -1,2 +1,0 @@
-# UI dependency entry point: install with pip install --require-hashes -r requirements.txt
--r requirements/app.lock

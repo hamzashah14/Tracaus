@@ -53,6 +53,51 @@ tool knows nothing about it and creates nothing for it.
 Team mode adds an IdP registration and a `team.toml` file on the UI host (section 7). A model API
 adds a secret that you create before `check` (section 8).
 
+## Guided path: three commands
+
+`./bin/tracaus setup`, `deploy` and `ui` wrap sections 3 and 4 below. Use them first; the manual commands remain the
+fallback and nothing in them changed. Each command prints numbered steps, says what it is about to do, explains every
+failure (what failed, why, what is safe, what to do next) and can be run again.
+
+| Command | What it does | What you answer |
+| --- | --- | --- |
+| `setup` | Reads EC2 and ECS (read-only), writes `deployment.json`, `runtime.json`, `automation.json`, builds the plan, and reports what is missing on each server or task | The profile and account, what to watch, the ALB question per ECS service, alert emails, the model, and whether to create the IAM roles |
+| `deploy` | Re-checks the plan, runs `check`, asks once, then runs `apply` and shows each stage as it completes | Yes to apply; a typed `yes` to the paid model request; confirming the subscription emails |
+| `status` | Read-only: stages, whether anything is routed, stack statuses, the next command | nothing |
+| `ui` | Adds the UI profiles, creates a password (shown once, saved mode 600), starts the UI on `127.0.0.1` | whether to write the profiles |
+
+**Does it need an administrator?** Only once, to create the three IAM roles, and only if they do not exist. That needs a
+profile that can create CloudFormation stacks with `CAPABILITY_NAMED_IAM` and IAM roles. `setup` asks which profile to use,
+asks you to type `yes`, uses it for that one stack and never again. If you cannot, it prints the command for an
+administrator and waits. Your own sign-in must be allowed to assume the operator role: the roles trust your own
+principal when `setup` can read it, otherwise the whole account (with a warning). Bedrock model access and a Lambda
+quota raise happen outside the tools and can need an administrator.
+
+**Files.** All under `.local/customer/` (override with `--work-dir`): the three settings files, `answers.json` (your
+answers, no secrets, reused as defaults), `discovery.json`, `plan.json`, `plan.hash`, `collector-examples/`,
+`guided.log` (everything printed, redacted), and after `deploy` the journal and `ui-connection.json`.
+
+**If something fails.** Nothing is routed to Tracaus before the `routing` stage, so an earlier failure leaves your alarms
+and servers untouched. CloudFormation undoes a failed stack change by itself, and the journal keeps what is done:
+run `deploy` again to resume. The commands never delete queues, keys, evidence, subscriptions or alarms; the only AWS
+resource `setup` may remove is its own empty role stack after a failed first creation, and only after you agree. A changed
+source or setting needs a new release (`refresh`, section 3.9). To roll back or retire a release, see
+[OPERATE.md](OPERATE.md#roll-back-and-retire-old-releases).
+
+| Flag | Meaning |
+| --- | --- |
+| `--work-dir PATH` | Where the settings live (under `.local/`) |
+| `--answers FILE` | Replay an `answers.json` without asking; stops on any missing answer |
+| `--yes` | Accept defaults. It never answers IAM or paid questions |
+| `--allow-iam-bootstrap`, `--allow-paid-canary` | Consent, without asking, to creating the roles or the paid model request |
+| `--admin-profile NAME` | `setup`: the profile that may create the IAM roles |
+| `--skip-install`, `--skip-check` | `setup`: skip the package download. `deploy`: skip the read-only permission check |
+| `--team-file FILE`, `--password-prompt` | `ui`: team mode, or type the password instead of generating one |
+| `--debug` | Show the full trace of an unexpected error |
+
+Exit codes: 0 done, 1 failed, 2 waiting on a named step, 3 refused by a safety rule, 130 interrupted. This path has
+only been tested with stubbed AWS: it has never run against a real account.
+
 ## 1. What you need before you start
 
 Read [PREREQUISITES.md](PREREQUISITES.md) first. It lists what must already exist before you run

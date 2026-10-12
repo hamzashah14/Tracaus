@@ -23,9 +23,6 @@ DEFAULT_HOURS_BACK, MAX_HOURS_BACK = 1, 72
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
 INSTANCE_ID_RE = re.compile(r"^(?:i-(?:[0-9a-f]{8}|[0-9a-f]{17})|ecs-[a-z0-9_]{1,24})$")
-METRIC_RE = re.compile(r"^[A-Za-z0-9_\-.%]{1,255}$")
-NAMESPACE_RE = re.compile(r"^[A-Za-z0-9_\-./]{1,255}$")
-PATH_RE = re.compile(r"^/[\w\-./]*$")
 
 
 class BadInput(ValueError):

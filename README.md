@@ -202,30 +202,23 @@ on non-Claude models is unmeasured.
 
 ## Deploy to your AWS account
 
-Run from a clean, committed checkout on macOS or Linux (Windows: WSL) with the
-development lock installed. Init, fill in the three private files it writes, dry-run, check,
-apply, then launch the UI:
+Three commands. Each one explains what it is doing, step by step, and can be run again.
 
 ```bash
-# Default local single-user mode. For team mode, see section 7 of the deployment guide.
-python -m infra.automation init --work-dir .local/customer
-python -m infra.automation dry-run --config .local/customer/automation.json --work-dir .local/customer
-python -m infra.automation check --config .local/customer/automation.json --work-dir .local/customer
-python -m infra.automation apply --config .local/customer/automation.json --work-dir .local/customer --plan-hash YOUR_PLAN_HASH
-python -m infra.automation status --work-dir .local/customer
-# Default mode only: set the UI password (12+ characters) in this shell. .env is not loaded.
-read -rs APP_PASSWORD; export APP_PASSWORD
-python scripts/run_customer_ui.py --connection .local/customer/ui-connection.json --profile customer-ui
+./bin/tracaus setup    # read your account, ask a few questions, write the settings, show the plan
+./bin/tracaus deploy   # check permissions, create the resources with live progress, handle each stop
+./bin/tracaus ui       # open the UI on http://127.0.0.1:8501
 ```
 
-`dry-run` makes no AWS calls and shows the plan hash. `check` only reads AWS.
-`apply` creates billable resources, stops at steps only you can do (the paid canary,
-and confirming inboxes) and ends with
-investigations paused. The generated files are synthetic examples that `check` and
-`apply` reject until you replace them with real values; keep them private. For a
-Model API, create its key secret in Secrets Manager yourself before `check`. You also
-set up your servers and UI hosting yourself, and your identity provider if you use
-team mode. Full steps: [deployment guide](docs/DEPLOY.md).
+- `setup` reads your running EC2 instances and ECS services (read-only), asks which to watch, and tells you what
+  is still missing on each server or task. Installing the CloudWatch agent and shipping logs stays your job.
+- You need an administrator-level AWS profile **once**, only to create the three IAM roles (if they do not exist
+  yet). `setup` asks before it does that, and never uses that profile again. `deploy` and `ui` run as the roles.
+- `deploy` never routes anything to Tracaus before its `routing` stage, stops for the paid model request and for the
+  subscription emails, and never deletes anything. `./bin/tracaus status` shows where it is at any time.
+
+Needs macOS or Linux (Windows: WSL), Python 3.12, Git and a clean checkout. Full guide, flags and the manual
+commands behind these three: [deployment guide](docs/DEPLOY.md).
 
 ## What does it cost?
 
