@@ -24,19 +24,18 @@ case "${1:-}" in
   *) usage >&2; exit 2 ;;
 esac
 
-python=""
-for candidate in python3.12 python3; do
-  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
-    python="$candidate"
-    break
-  fi
-done
-if [ -z "$python" ]; then
-  echo "Python 3.12 is required (found none). Install it, then run this again." >&2
-  exit 1
-fi
-
 if [ ! -x .venv/bin/python ]; then
+  python=""
+  for candidate in python3.12 python3; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+      python="$candidate"
+      break
+    fi
+  done
+  if [ -z "$python" ]; then
+    echo "Python 3.12 is required (found none). Install it, then run this again." >&2
+    exit 1
+  fi
   echo "Creating .venv with $python ..." >&2
   "$python" -m venv .venv
 fi
