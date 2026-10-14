@@ -344,3 +344,24 @@ def test_agentcore_name_limit_is_checked_when_the_plan_is_made(tmp_path, target,
         with pytest.raises(ValueError, match="48 characters"):
             durable.load_config(path, long_names)
     assert durable.load_config(path, SPEC)["runtime_target"] == target
+
+
+def test_agentcore_role_log_groups_name_the_runtime_not_a_python_object():
+    stages = examples(SPEC, {**BASE, "runtime_target": "agentcore"})
+    role = stages["agentcore-runtime"]["Resources"]["ExecutionRole"]["Properties"]
+    statements = role["Policies"][0]["PolicyDocument"]["Statement"]
+    arns = [
+        arn
+        for st in statements
+        for arn in (st["Resource"] if isinstance(st["Resource"], list) else [st["Resource"]])
+    ]
+    groups = [a for a in arns if isinstance(a, str) and ":log-group:/aws/bedrock-agentcore/runtimes/" in a]
+    assert groups and all(f"/runtimes/{owned_runtime.runtime_name(SPEC)}*" in a for a in groups)
+    assert not any("<" in a for a in arns if isinstance(a, str))
+
+
+@pytest.mark.parametrize("target", ["standalone", "agentcore"])
+def test_no_rendered_template_contains_a_python_repr(target):
+    for stage, template in examples(SPEC, {**BASE, "runtime_target": target}).items():
+        text = json.dumps(template)
+        assert "<function" not in text and " object at 0x" not in text, stage

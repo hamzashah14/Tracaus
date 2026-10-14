@@ -231,11 +231,11 @@ def agentcore_release(spec, config, bindings, artifact, version=None):
             statement("s3:GetObjectVersion", f"arn:aws:s3:::{artifact['bucket']}/{artifact['key']}"),
             statement(
                 "logs:CreateLogGroup",
-                f"arn:aws:logs:{spec['bedrock_region']}:{spec['account_id']}:log-group:/aws/bedrock-agentcore/runtimes/{runtime_name}*",
+                f"arn:aws:logs:{spec['bedrock_region']}:{spec['account_id']}:log-group:/aws/bedrock-agentcore/runtimes/{runtime_name(spec)}*",
             ),
             statement(
                 ["logs:CreateLogStream", "logs:PutLogEvents"],
-                f"arn:aws:logs:{spec['bedrock_region']}:{spec['account_id']}:log-group:/aws/bedrock-agentcore/runtimes/{runtime_name}*:log-stream:*",
+                f"arn:aws:logs:{spec['bedrock_region']}:{spec['account_id']}:log-group:/aws/bedrock-agentcore/runtimes/{runtime_name(spec)}*:log-stream:*",
             ),
         ],
         release=True,
