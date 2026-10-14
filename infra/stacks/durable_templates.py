@@ -8,6 +8,7 @@ from infra.spec import (
     ecs_services,
     event_rules,
     fallback_recipients,
+    log_prefix,
     name,
     prefix,
     targets,
@@ -49,6 +50,10 @@ def report_bucket(spec):
     if len(value) > 63:
         raise ValueError("Report bucket name exceeds S3 limit")
     return value
+
+
+def audit_log_group(spec):
+    return f"{log_prefix(spec)}/audit"
 
 
 def foundation(spec, config):
@@ -362,6 +367,14 @@ def foundation(spec, config):
         },
         retain=True,
     )
+    r["AuditLogGroup"] = resource(  # who read which incident and who asked what, written by the team UI
+        "Logs::LogGroup",
+        {
+            "LogGroupName": audit_log_group(spec),
+            "RetentionInDays": spec["log_retention_days"],
+            "Tags": tagged(spec),
+        },
+    )
     r["StreamDeadAlarm"] = resource(
         "CloudWatch::Alarm",
         {
@@ -388,6 +401,7 @@ def foundation(spec, config):
             "FallbackTopicArn": {"Value": ref("FallbackTopic")},
             "StreamDeadArn": {"Value": att("StreamDead")},
             "DeliveryDeadArn": {"Value": att("DeliveryDead")},
+            "AuditLogGroup": {"Value": ref("AuditLogGroup")},
         }
     )
     return t
@@ -614,6 +628,10 @@ def active_routing(
                 "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["INCIDENT#*"]},
                 "Null": {"dynamodb:LeadingKeys": "false"},
             },
+        ),
+        statement(
+            ["logs:CreateLogStream", "logs:PutLogEvents"],
+            f"arn:aws:logs:{spec['monitor_region']}:{spec['account_id']}:log-group:{foundation_outputs['AuditLogGroup']}:*",
         ),
         statement("s3:GetObjectVersion", f"arn:aws:s3:::{foundation_outputs['EvidenceBucket']}/incidents/*"),
         statement("kms:Decrypt", foundation_outputs["EvidenceKeyArn"]),

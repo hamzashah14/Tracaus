@@ -383,6 +383,79 @@ def test_audit_filters_tokens_to_valid_keys_and_types(capsys):
     assert "tokens" not in data
 
 
+# ---- audit in CloudWatch Logs --------------------------------------------------
+
+
+class FakeLogs:
+    class exceptions:
+        class ResourceAlreadyExistsException(Exception):
+            pass
+
+    def __init__(self, fail=None, existing=False):
+        self.calls, self.fail, self.existing = [], fail, existing
+
+    def create_log_stream(self, **kwargs):
+        self.calls.append(("create", kwargs))
+        if self.existing:
+            raise self.exceptions.ResourceAlreadyExistsException()
+
+    def put_log_events(self, **kwargs):
+        self.calls.append(("put", kwargs))
+        if self.fail:
+            raise self.fail
+
+
+@pytest.fixture
+def logs(monkeypatch):
+    import boto3
+
+    team._SHIP.update(client=None, stream=None, failed=False)
+    monkeypatch.setenv("AUDIT_LOG_GROUP", "/tracaus/staging/audit")
+    monkeypatch.setenv("MONITOR_REGION", "eu-central-1")
+    fake = FakeLogs()
+    monkeypatch.setattr(boto3, "client", lambda service, **kwargs: fake)
+    yield fake
+    team._SHIP.update(client=None, stream=None, failed=False)
+
+
+def test_the_audit_line_is_also_written_to_the_log_group_in_one_stream(logs, capsys):
+    team.audit("user-1", "investigator", None, "chat", "OK")
+    team.audit("user-1", "viewer", IID, "report", "OK")
+    printed = capsys.readouterr().out.strip().splitlines()
+    kinds = [kind for kind, _ in logs.calls]
+    assert kinds == ["create", "put", "put"]  # the stream is made once per process
+    created = logs.calls[0][1]
+    puts = [kwargs for kind, kwargs in logs.calls if kind == "put"]
+    assert created["logGroupName"] == "/tracaus/staging/audit"
+    assert all(put["logStreamName"] == created["logStreamName"] for put in puts)
+    assert [put["logEvents"][0]["message"] for put in puts] == printed  # the same line, nothing added
+    assert not team.audit_failed()
+
+
+def test_an_existing_stream_is_not_an_error(logs):
+    logs.existing = True
+    team.audit("user-1", "viewer", IID, "report", "OK")
+    assert not team.audit_failed() and [kind for kind, _ in logs.calls] == ["create", "put"]
+
+
+def test_a_failed_write_keeps_the_stdout_line_and_is_reported(logs, capsys):
+    logs.fail = RuntimeError("AccessDenied")
+    team.audit("user-1", "viewer", IID, "report", "OK")
+    assert json.loads(capsys.readouterr().out)["event"] == "tracaus.audit"
+    assert team.audit_failed()
+    logs.fail = None
+    team.audit("user-1", "viewer", IID, "report", "OK")
+    assert not team.audit_failed()  # the next line that gets through clears it
+
+
+def test_no_log_group_means_stdout_only_and_a_warning(monkeypatch, capsys):
+    team._SHIP.update(client=None, stream=None, failed=False)
+    monkeypatch.delenv("AUDIT_LOG_GROUP", raising=False)
+    team.audit("user-1", "viewer", IID, "report", "OK")
+    assert json.loads(capsys.readouterr().out)["action"] == "report"
+    assert team.audit_failed()
+
+
 # ---- packaging -----------------------------------------------------------------
 
 

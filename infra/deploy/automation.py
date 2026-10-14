@@ -684,6 +684,7 @@ def deploy(planned, directory, driver, *, allow_model=False, retry_canary=False)
             "MONITOR_REGION": planned["spec"]["monitor_region"],
             "INCIDENT_TABLE": state["bindings"]["foundation"]["TableName"],
             "REPORT_BUCKET": state["bindings"]["foundation"]["EvidenceBucket"],
+            "AUDIT_LOG_GROUP": state["bindings"]["foundation"]["AuditLogGroup"],
         }
         if planned["spec"]["environment"] != "staging":
             raise Waiting(

@@ -420,6 +420,7 @@ def test_durable_templates_keep_capture_ahead_of_cutover_and_scope_roles():
         StreamArn="arn:aws:dynamodb:eu-central-1:123456789012:table/test/stream/1",
         StreamDeadArn="arn:aws:sqs:eu-central-1:123456789012:stream-dead",
         DeliveryDeadArn="arn:aws:sqs:eu-central-1:123456789012:delivery-dead",
+        AuditLogGroup="/tracaus/staging/audit",
         TableArn="arn:aws:dynamodb:eu-central-1:123456789012:table/test",
         EvidenceBucket="example-reports",
         EvidenceKeyArn="arn:aws:kms:eu-central-1:123456789012:key/example",
@@ -877,3 +878,32 @@ def test_each_function_reaches_only_its_own_partition_keys(role, prefixes):
     }  # ForAllValues is true when the key is absent
     assert ("dynamodb:ConditionCheckItem" in actions(table[0])) is (role == "IngressRole")
     assert bool(indexes) is (role == "ReconcileRole")
+
+
+def test_audit_log_group_is_created_and_only_the_ui_role_may_write_it():
+    from infra.spec import ROOT, load
+    from infra.stacks import durable_templates
+    from scripts.dev.validate_durable import examples
+
+    spec = load(ROOT / "examples/deployment.example.json")
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    stages = examples(spec, config)
+    group = stages["durable-foundation"]["Resources"]["AuditLogGroup"]["Properties"]
+    assert group["LogGroupName"] == durable_templates.audit_log_group(spec) == "/tracaus/staging/audit"
+    assert group["RetentionInDays"] == spec["log_retention_days"]
+    assert stages["durable-foundation"]["Outputs"]["AuditLogGroup"] == {"Value": {"Ref": "AuditLogGroup"}}
+    writers = []
+    for stage in stages.values():
+        for logical, resource in stage["Resources"].items():
+            if resource["Type"] != "AWS::IAM::Role":
+                continue
+            for policy in resource["Properties"].get("Policies", []):
+                for statement in policy["PolicyDocument"]["Statement"]:
+                    resources = (
+                        statement["Resource"]
+                        if isinstance(statement["Resource"], list)
+                        else [statement["Resource"]]
+                    )
+                    if any(isinstance(r, str) and "log-group:/tracaus/staging/audit" in r for r in resources):
+                        writers.append((logical, sorted(statement["Action"])))
+    assert writers == [("UiRole", ["logs:CreateLogStream", "logs:PutLogEvents"])]

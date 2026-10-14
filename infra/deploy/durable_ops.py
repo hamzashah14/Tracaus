@@ -107,6 +107,7 @@ def collect(bundle, stage, factory=clients):
             "EvidenceKeyArn",
             "StreamDeadArn",
             "DeliveryDeadArn",
+            "AuditLogGroup",
         } | {
             key + suffix
             for key in ("Ingress", "Work", "Initial", "Report")

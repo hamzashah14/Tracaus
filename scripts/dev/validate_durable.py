@@ -23,6 +23,7 @@ def examples(spec, config, *, include_bindings=False):
         "EvidenceKeyArn": f"arn:aws:kms:{region}:{account}:key/12345678-1234-1234-1234-123456789012",
         "StreamDeadArn": f"arn:aws:sqs:{region}:{account}:{name(spec, 'stream-dead')}",
         "DeliveryDeadArn": f"arn:aws:sqs:{region}:{account}:{name(spec, 'delivery-dead')}",
+        "AuditLogGroup": durable_templates.audit_log_group(spec),
     }
     for key in durable_templates.QUEUES:
         foundation[key + "QueueArn"] = durable_templates.queue_arn(spec, key)

@@ -180,6 +180,12 @@ if not st.session_state.get("authenticated"):
             st.error("The workspace password did not match.")
     st.stop()
 
+if member is not None and team.audit_failed():
+    st.warning(
+        "Audit records could not be written to CloudWatch Logs; they went to this process's output only. "
+        "Ask the deployment operator to check the UI role and AUDIT_LOG_GROUP."
+    )
+
 requested_incident = st.query_params.get("incident")
 if requested_incident:
     with st.container(border=True):
