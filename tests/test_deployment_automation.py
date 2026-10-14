@@ -1,7 +1,7 @@
 import copy
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -1451,6 +1451,24 @@ def test_resume_after_confirmation_reruns_only_verification_and_finishes(tmp_pat
     assert not {"build", "upload", "canary", "change-set", "execute"} & set(driver.calls[before:])
     assert driver.canaries == 1 and driver.calls.count("build") == 1
     assert json.loads((directory / "ui-connection.json").read_text())["ui_role_arn"]
+
+
+def test_slow_email_click_after_routing_needs_no_second_paid_canary(tmp_path, monkeypatch):
+    planned, directory, driver = awaiting_routing_verification(tmp_path, monkeypatch)
+    primary_email(driver)["SubscriptionArn"] = "PendingConfirmation"
+    automation.deploy(planned, directory, driver, allow_model=True)
+    state = journal(directory)
+    state["canary"]["checked_at"] = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+    automation.private_json(directory / "state.json", state)
+    primary_email(driver)["SubscriptionArn"] = driver.subscriptions[1]["SubscriptionArn"] + ":confirmed"
+    # No --allow-model-invocation, and the receipt is long expired.
+    before = len(driver.calls)
+    result = automation.deploy(planned, directory, driver)
+    assert result["status"] == "INFRASTRUCTURE_READY_MANUAL_ACCEPTANCE_PENDING"
+    assert driver.canaries == 1 and not {"canary", "retirement-plan"} & set(driver.calls[before:])
+    # A finished journal stays finished when apply is run again.
+    again = automation.deploy(planned, directory, driver)
+    assert again["status"] == "INFRASTRUCTURE_READY_MANUAL_ACCEPTANCE_PENDING" and driver.canaries == 1
 
 
 def mismatch(kind, driver, spec):
