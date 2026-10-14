@@ -280,8 +280,11 @@ def validate(raw, catalog):
                 raise ValueError()
             if finding["kind"] == "task_failure" and not any(
                 e["tool"] == "fetch_ecs"
+                and e["result"].get("status") in {"ok", "partial"}
+                # complete, or only cut short: the rows it does hold are genuine, and a crash loop always is
+                and (e["result"].get("complete") is True or e["result"].get("truncated") is True)
                 and quotes_abnormal_stop(e, [f for f in value["facts"] if f["evidence_id"] == e["id"]])
-                for e in usable
+                for e in selected
             ):
                 raise ValueError()
             if finding["kind"] == "contradictory_evidence":

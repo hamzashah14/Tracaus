@@ -91,3 +91,20 @@ def test_sustained_rule():
     )  # run of 3
     assert diagnosis.sustained([True, True, True, True, False])  # 80 percent
     assert not diagnosis.sustained([True, False, True, False, True, False])
+
+
+def ecs_verdict(**result):
+    case = copy.deepcopy(CASES["ecs-task-failure"])
+    for entry in case["catalog"]:
+        if entry["tool"] == "fetch_ecs":
+            entry["result"].update(result)
+    catalog = [{**e, "result": safety.bounded(e["result"])} for e in case["catalog"]]
+    return diagnosis.validate(safety.text(json.dumps(case["candidate"])), catalog)["status"]
+
+
+def test_task_failure_survives_a_cut_short_ecs_answer_but_not_an_unreadable_one():
+    assert ecs_verdict() == "VALID"
+    assert (
+        ecs_verdict(status="partial", complete=False, truncated=True) == "VALID"
+    )  # a crash loop: many tasks
+    assert ecs_verdict(complete=False) == "REJECTED"  # e.g. target health unreadable

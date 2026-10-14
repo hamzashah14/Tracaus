@@ -21,6 +21,7 @@ BOTO_CONFIG = Config(connect_timeout=3, read_timeout=10, retries={"total_max_att
 DEFAULT_WINDOW_MINUTES, MAX_WINDOW_MINUTES = 30, 180
 MAX_DEPLOYMENTS, MAX_EVENTS, MAX_TASKS, MAX_CONTAINERS, MAX_TARGETS = 5, 20, 10, 8, 20
 MAX_TEXT = 300
+MAX_PAGES = 5  # of 100 stopped-task ARNs each; ECS keeps stopped tasks for about an hour
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -44,6 +45,13 @@ def clip(text, limit=MAX_TEXT):
         return None
     text = " ".join(str(text).split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def cap(rows, limit, notes):
+    """The first `limit` rows. A row left out is noted, so the answer is marked partial rather than complete."""
+    if len(rows) > limit:
+        notes.append(limit)
+    return rows[:limit]
 
 
 def stamp(value):
@@ -70,7 +78,7 @@ def resolve_window(params, now):
     return anchor, anchor - window, min(anchor + window, now)
 
 
-def service_block(service):
+def service_block(service, notes):
     deployments = sorted(service.get("deployments", []), key=lambda d: d["createdAt"], reverse=True)
     return {
         "status": service["status"],
@@ -90,22 +98,37 @@ def service_block(service):
                 "pending_count": d.get("pendingCount", 0),
                 "failed_tasks": d.get("failedTasks", 0),
             }
-            for d in deployments[:MAX_DEPLOYMENTS]
+            for d in cap(deployments, MAX_DEPLOYMENTS, notes)
         ],
     }
 
 
-def service_events(service, start, end):
+def service_events(service, start, end, notes):
     inside = [e for e in service.get("events", []) if start <= e["createdAt"] <= end]
     inside.sort(key=lambda e: e["createdAt"])
-    return [{"at": stamp(e["createdAt"]), "message": clip(e.get("message"))} for e in inside[-MAX_EVENTS:]]
+    newest = cap(inside[::-1], MAX_EVENTS, notes)[::-1]
+    return [{"at": stamp(e["createdAt"]), "message": clip(e.get("message"))} for e in newest]
 
 
-def stopped_tasks(client, cluster, name, start, end):
-    arns = client.list_tasks(cluster=cluster, serviceName=name, desiredStatus="STOPPED", maxResults=100)[
-        "taskArns"
-    ]
-    tasks = client.describe_tasks(cluster=cluster, tasks=arns)["tasks"] if arns else []
+def stopped_tasks(client, cluster, name, start, end, notes):
+    arns, token = [], None
+    for _ in range(MAX_PAGES):
+        page = client.list_tasks(
+            cluster=cluster,
+            serviceName=name,
+            desiredStatus="STOPPED",
+            maxResults=100,
+            **({"nextToken": token} if token else {}),
+        )
+        arns += page["taskArns"]
+        token = page.get("nextToken")
+        if not token:
+            break
+    if token:
+        notes.append(MAX_PAGES)  # more stopped tasks exist than the pages read
+    tasks = []
+    for first in range(0, len(arns), 100):  # DescribeTasks takes at most 100 at a time
+        tasks += client.describe_tasks(cluster=cluster, tasks=arns[first : first + 100])["tasks"]
     # A STOPPED task with no stop time is shown with a null time rather than dropped: it is still evidence.
     inside = [
         t
@@ -122,14 +145,14 @@ def stopped_tasks(client, cluster, name, start, end):
             "task_definition": short(t["taskDefinitionArn"]) if t.get("taskDefinitionArn") else None,
             "containers": [
                 {"name": c.get("name", ""), "exit_code": c.get("exitCode"), "reason": clip(c.get("reason"))}
-                for c in t.get("containers", [])[:MAX_CONTAINERS]
+                for c in cap(t.get("containers", []), MAX_CONTAINERS, notes)
             ],
         }
-        for t in inside[:MAX_TASKS]
+        for t in cap(inside, MAX_TASKS, notes)
     ]
 
 
-def task_definition_block(client, arn):
+def task_definition_block(client, arn, notes):
     """An allowlist. Task definitions can hold environment values and secret references: none leave here."""
     td = client.describe_task_definition(taskDefinition=arn)["taskDefinition"]
     return {
@@ -148,12 +171,12 @@ def task_definition_block(client, arn):
                 "health_check": "healthCheck" in c,
                 "log_driver": (c.get("logConfiguration") or {}).get("logDriver"),
             }
-            for c in td.get("containerDefinitions", [])[:MAX_CONTAINERS]
+            for c in cap(td.get("containerDefinitions", []), MAX_CONTAINERS, notes)
         ],
     }
 
 
-def target_health(group_arn):
+def target_health(group_arn, notes):
     elb = boto3.client("elbv2", region_name=MONITOR_REGION, config=BOTO_CONFIG)
     descriptions = elb.describe_target_health(TargetGroupArn=group_arn)["TargetHealthDescriptions"]
     counts = {}
@@ -170,7 +193,7 @@ def target_health(group_arn):
                 "description": clip(item["TargetHealth"].get("Description")),
                 "port": item.get("Target", {}).get("Port"),
             }
-            for item in descriptions[:MAX_TARGETS]
+            for item in cap(descriptions, MAX_TARGETS, notes)
         ],
     }
 
@@ -222,20 +245,23 @@ def search(params, event=None):
             **base,
             "message": "The ECS service was not found or is INACTIVE; it may have been deleted.",
         }
+    notes = []
     result = {
         "status": "ok",
         **base,
-        "service": service_block(service),
-        "service_events": service_events(service, start, end),
-        "stopped_tasks": stopped_tasks(client, where["cluster"], where["service"], start, end),
-        "task_definition": task_definition_block(client, service["taskDefinition"]),
+        "service": service_block(service, notes),
+        "service_events": service_events(service, start, end, notes),
+        "stopped_tasks": stopped_tasks(client, where["cluster"], where["service"], start, end, notes),
+        "task_definition": task_definition_block(client, service["taskDefinition"], notes),
     }
     if where["load_balancer"]:
         try:
-            result["load_balancer"] = target_health(where["load_balancer"]["target_group_arn"])
+            result["load_balancer"] = target_health(where["load_balancer"]["target_group_arn"], notes)
         except ClientError:
             result["load_balancer"] = {"status": "unavailable", "counts": {}, "targets": []}
             result["complete"] = False  # the model must declare the missing target health
+    if notes:  # any row left out, as trim() does for the transport budget
+        result.update(truncated=True, complete=False, status="partial")
     return trim(event or {}, result)
 
 
