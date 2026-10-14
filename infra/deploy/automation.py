@@ -422,6 +422,11 @@ class Driver:
             raise VerificationError("Existing stack is not owned by this deployment")
         return response
 
+    def assert_deployed_by_plan(self, bundle, current):
+        """DescribeChangeSet never reports the role, so check the stack once its change has run."""
+        if current.get("RoleARN") != bundle["spec"]["deployment_role_arn"]:
+            raise VerificationError("Stack was not deployed by the planned CloudFormation execution role")
+
     def template_matches(self, bundle, stage):
         info = bundle["stages"][stage]
         body = self.clients("cloudformation", info["region"]).get_template(StackName=info["stack"])[
@@ -454,6 +459,7 @@ class Driver:
             and current["StackStatus"] in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
             and self.template_matches(bundle, stage)
         ):
+            self.assert_deployed_by_plan(bundle, current)
             if info["create_only"]:
                 self.op(bundle, "seal-runtime", stage=stage)
             record["status"] = "COMPLETE"
@@ -499,6 +505,7 @@ class Driver:
                 and current["StackStatus"] in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
                 and self.template_matches(bundle, stage)
             ):
+                self.assert_deployed_by_plan(bundle, current)
                 record["status"] = "COMPLETE"
                 save()
                 return

@@ -492,6 +492,43 @@ def test_existing_stack_access_denial_not_absence(tmp_path):
         driver.inspect_stack(bundle, "routing")
 
 
+@pytest.mark.parametrize("role_matches", [True, False])
+@pytest.mark.parametrize("no_changes", [False, True])
+def test_finished_stack_must_have_been_deployed_by_the_planned_role(tmp_path, role_matches, no_changes):
+    p = configuration(tmp_path)
+    role = p["spec"]["deployment_role_arn"]
+    driver = object.__new__(automation.Driver)
+    cfn = Mock()
+    cfn.describe_change_set.return_value = {"Status": "FAILED"}  # CloudFormation: nothing to change
+    driver.clients = Mock(return_value=cfn)
+    driver.inspect_stack = Mock(
+        return_value={"StackStatus": "UPDATE_COMPLETE", "RoleARN": role if role_matches else role + "-other"}
+    )
+    # first check: the stack is already current; second (after a FAILED change set): it still is
+    driver.template_matches = Mock(side_effect=[False, True] if no_changes else [True])
+    driver.op = Mock()
+    bundle = {
+        "review_hash": "a" * 64,
+        "stages": {
+            "routing": {
+                "stack": "example",
+                "region": "eu-central-1",
+                "create_only": False,
+                "template_hash": "h",
+            }
+        },
+        "spec": p["spec"],
+    }
+    record = {}
+    if role_matches:
+        driver.stage(bundle, "routing", record, Mock())
+        assert record["status"] == "COMPLETE"
+    else:
+        with pytest.raises(VerificationError, match="planned CloudFormation execution role"):
+            driver.stage(bundle, "routing", record, Mock())
+        assert record["status"] == "INTENT"
+
+
 @pytest.mark.parametrize("status", ["CREATE_IN_PROGRESS", "ROLLBACK_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"])
 def test_in_progress_and_rollback_not_success(tmp_path, status):
     p = configuration(tmp_path)

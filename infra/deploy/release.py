@@ -89,7 +89,7 @@ def change_set_digest(response):
     return digest(
         {
             key: response.get(key)
-            for key in ("ChangeSetId", "StackId", "Changes", "Parameters", "Capabilities", "RoleARN", "Tags")
+            for key in ("ChangeSetId", "StackId", "Changes", "Parameters", "Capabilities", "Tags")
         }
     )
 
@@ -107,8 +107,6 @@ def inspect_change_set(bundle, stage, change_set, clients):
         body = json.loads(body)
     if templates.template_hash(body) != info["template_hash"]:
         raise VerificationError("CloudFormation template differs from reviewed bundle")
-    if result.get("RoleARN") != bundle["spec"]["deployment_role_arn"]:
-        raise VerificationError("CloudFormation execution role differs from the plan")
     return result, change_set_digest(result)
 
 

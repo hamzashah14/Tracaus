@@ -3,8 +3,10 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import botocore.session
 import pytest
 from botocore.exceptions import ClientError
+from botocore.stub import Stubber
 
 from infra.deploy import durable, durable_ops, release
 from infra.deploy.verify import (
@@ -495,6 +497,42 @@ def test_cloud_change_set_template_mismatch_cannot_execute(spec):
     with pytest.raises(VerificationError, match="template"):
         release.inspect_change_set(bundle, "tools", "candidate", lambda *args: client)
     client.execute_change_set.assert_not_called()
+
+
+def test_change_set_inspection_accepts_a_response_shaped_like_aws(spec):
+    """DescribeChangeSet has no RoleARN; the stub is validated against the real service model."""
+    body = {"Resources": {}}
+    bundle = {
+        "spec": spec,
+        "stages": {
+            "tools": {
+                "stack": "candidate-tools",
+                "region": spec["bedrock_region"],
+                "template_hash": templates.template_hash(body),
+            }
+        },
+    }
+    client = botocore.session.get_session().create_client(
+        "cloudformation", region_name="us-east-1", aws_access_key_id="x", aws_secret_access_key="x"
+    )
+    ref = {"StackName": "candidate-tools", "ChangeSetName": "candidate"}
+    with Stubber(client) as stub:
+        stub.add_response(
+            "describe_change_set",
+            {
+                "ChangeSetId": "cs-1",
+                "StackId": "stack-1",
+                "Status": "CREATE_COMPLETE",
+                "ExecutionStatus": "AVAILABLE",
+                "Changes": [],
+                "Capabilities": ["CAPABILITY_IAM"],
+                "Tags": [],
+            },
+            ref,
+        )
+        stub.add_response("get_template", {"TemplateBody": json.dumps(body)}, ref)
+        result, digest = release.inspect_change_set(bundle, "tools", "candidate", lambda *args: client)
+    assert result["ChangeSetId"] == "cs-1" and len(digest) == 64
 
 
 def test_released_roles_are_retained_with_published_functions(spec):
