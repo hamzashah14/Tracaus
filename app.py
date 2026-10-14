@@ -287,7 +287,9 @@ if not st.session_state.messages:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         if message["content"]:
-            st.markdown(message["content"])
+            # Plain text: model output is built from logs that outsiders write, and markdown would fetch an
+            # image or follow a link in it, carrying redacted evidence out in the URL.
+            st.text(message["content"])
         if message.get("status") in {"error", "partial"}:
             st.warning(message["message"])
             st.caption(f"{message['code']} · Reference {message['reference']}")
@@ -344,7 +346,7 @@ if prompt and prompt.strip():
     st.session_state.attempts.append(time.monotonic())
     st.session_state.last_prompt = prompt
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.text(prompt)
     started = time.monotonic()
     with st.chat_message("assistant"), st.status("Starting the investigation…", expanded=True) as box:
 
