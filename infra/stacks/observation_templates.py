@@ -433,7 +433,7 @@ def active(spec, outputs, versions, pipeline_versions, *, runtime_target="standa
         "ingress": ("Accepted", "Duplicate", "Failure", "QueueDelaySeconds"),
         "dispatch": ("Failure",),
         "work": ("Attempt", "Failure", "ReportPersisted"),
-        "model": ("ModelCalls", "InputTokens", "OutputTokens", "Deadline", "Failure"),
+        "model": ("ModelCalls", "InputTokens", "OutputTokens", "Deadline", "DailyBudget", "Failure"),
         "tool": ("ToolFailure", "ToolNoData"),
         "initial": ("NotificationAccepted", "Failure"),
         "report": ("NotificationAccepted", "Failure"),

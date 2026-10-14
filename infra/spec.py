@@ -227,6 +227,12 @@ def load(path):
     return value
 
 
+def daily_token_budget(spec):
+    from tracaus.runtime import DAILY_TOKEN_BUDGET
+
+    return spec.get("daily_token_budget", DAILY_TOKEN_BUDGET)
+
+
 def prefix(spec):
     return f"{spec['project']}-{spec['environment']}"
 

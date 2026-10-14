@@ -31,6 +31,7 @@ METRICS = {
     "ToolFailure",
     "ToolNoData",
     "Deadline",
+    "DailyBudget",
     "InputTokens",
     "OutputTokens",
     "ModelCalls",

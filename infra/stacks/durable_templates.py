@@ -505,7 +505,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                 "BEDROCK_REGION": spec["bedrock_region"],
             },
             [
-                *table(["INCIDENT", "EVENT"]),
+                *table(["INCIDENT", "EVENT", "BUDGET"]),
                 sqs_receive("Work"),
                 statement("s3:PutObject", f"arn:aws:s3:::{bucket}/incidents/*"),
                 statement(["kms:Encrypt", "kms:GenerateDataKey"], key_arn),

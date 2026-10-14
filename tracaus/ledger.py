@@ -486,6 +486,33 @@ class Ledger:
             raise
         return {key: int(result[key]) for key in COUNTERS}
 
+    def reserve_daily(self, tokens, budget, now=None):
+        """Count tokens against today's (UTC) account-wide budget, never refunded: a reservation whose model call
+        is lost still counts, as it does per incident. RuntimeStop when the day has no room left."""
+        from tracaus.runtime import RuntimeStop
+
+        now = int(time.time() if now is None else now)
+        if type(tokens) is not int or tokens < 1 or type(budget) is not int or budget < 1:
+            raise ValueError("Invalid daily budget reservation")
+        if tokens > budget:
+            raise RuntimeStop("DAILY_BUDGET_EXHAUSTED")
+        try:
+            self.table.update_item(
+                Key={"PK": "BUDGET#" + time.strftime("%Y-%m-%d", time.gmtime(now)), "SK": "META"},
+                UpdateExpression="ADD tokens_reserved :tokens SET #t=:ttl",
+                ConditionExpression="attribute_not_exists(tokens_reserved) OR tokens_reserved<=:room",
+                ExpressionAttributeNames={"#t": "ttl"},
+                ExpressionAttributeValues={
+                    ":tokens": tokens,
+                    ":room": budget - tokens,
+                    ":ttl": now + 3 * 86400,
+                },
+            )
+        except ClientError as exc:
+            if conditional(exc):
+                raise RuntimeStop("DAILY_BUDGET_EXHAUSTED") from None
+            raise
+
     def record_usage(self, claim, input_tokens, output_tokens):
         """Observed usage is a lower bound after lost responses; reservations stay authoritative."""
         if any(type(v) is not int or v < 0 for v in (input_tokens, output_tokens)):

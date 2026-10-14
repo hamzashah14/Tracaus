@@ -9,6 +9,7 @@ from infra.deploy.verify import VerificationError
 from infra.spec import (
     ROOT,
     TOOL_LOGICAL,
+    daily_token_budget,
     digest,
     ecs_services,
     name,
@@ -156,6 +157,7 @@ def environment(spec, config, bindings):
             else {}
         ),
         "RUNTIME_LIMITS": json.dumps(config["runtime_limits"], sort_keys=True, separators=(",", ":")),
+        "DAILY_TOKEN_BUDGET": str(daily_token_budget(spec)),
         "RUNTIME_RELEASE": fingerprint(spec, config, bindings),
         **({"MODEL_API": model_api_environment(spec, bindings)} if model_api(spec) else {}),
         **(
@@ -225,6 +227,12 @@ def agentcore_release(spec, config, bindings, artifact, version=None):
             statement(
                 ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:PutItem"],
                 foundation["TableArn"],
+                Condition={
+                    "ForAllValues:StringLike": {
+                        "dynamodb:LeadingKeys": ["INCIDENT#*", "EVENT#*", "BUDGET#*"]
+                    },
+                    "Null": {"dynamodb:LeadingKeys": "false"},
+                },
             ),
             statement("s3:PutObject", f"arn:aws:s3:::{foundation['EvidenceBucket']}/incidents/*"),
             statement(["kms:Encrypt", "kms:GenerateDataKey"], foundation["EvidenceKeyArn"]),

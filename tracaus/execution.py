@@ -6,7 +6,7 @@ import os
 import re
 import time
 
-from tracaus.runtime import LambdaTools, Limits, MemoryBudget, RuntimeStop, run
+from tracaus.runtime import DAILY_TOKEN_BUDGET, LambdaTools, Limits, MemoryBudget, RuntimeStop, run
 from tracaus.telemetry import correlate
 
 
@@ -114,7 +114,11 @@ def execute(payload, *, store=None, checkpoint=None, local=None, allowed=None, p
             raise RuntimeStop("UNAUTHORIZED_INSTANCE")
         store.begin_execution(claim, policy.fingerprint, release)
 
+        daily = int(os.getenv("DAILY_TOKEN_BUDGET", DAILY_TOKEN_BUDGET))
+
         def reserve(delta):
+            if "tokens_reserved" in delta:  # the day's budget first: a refusal must not spend this incident's
+                store.reserve_daily(delta["tokens_reserved"], daily)
             return store.reserve(claim, policy, delta)
 
         executor = tools(policy, reserve, event["instance_id"], event["occurred_at"])

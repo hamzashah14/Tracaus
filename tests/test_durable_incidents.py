@@ -845,7 +845,7 @@ def test_report_email_names_alarms_folded_into_the_incident(monkeypatch, folded,
 TABLE_PREFIXES = {  # what each function reads and writes: a partition-key family per line of ledger.py's use
     "IngressRole": {"INCIDENT", "EVENT", "ALARM", "COOLDOWN"},
     "DispatchRole": {"INCIDENT"},
-    "InvestigateRole": {"INCIDENT", "EVENT"},
+    "InvestigateRole": {"INCIDENT", "EVENT", "BUDGET"},
     "InitialRole": {"INCIDENT"},
     "ReportRole": {"INCIDENT"},
     "ReconcileRole": {"INCIDENT", "SWEEP"},
