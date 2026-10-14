@@ -100,8 +100,10 @@ incident per target** (an EC2 instance or an ECS service):
 - The first alarm for an instance opens an incident, investigates it and starts a window of
   `incident_cooldown_minutes` (default 15, set in `runtime.json`, 0 turns it off, maximum 120).
 - Any other alarm for that instance inside the window is stored with its original event and counted on the open
-  incident (`suppressed_alarms` on the incident status page). It starts no investigation and sends no email. The
-  window does not extend, so a long outage opens a new incident every 15 minutes at most.
+  incident (`suppressed_alarms` on the incident status page, with the alarm names in `suppressed_alarm_names`). It
+  starts no investigation and sends no email of its own; the incident's report email lists the names under "Also
+  alarmed during this incident". The window does not extend, so a long outage opens a new incident every 15 minutes
+  at most.
 - If observers are on, the OK transition of a folded alarm still links to the open incident.
 - Folded: alarms, and the task-stop events of an ECS service (a crash loop stops a task every few seconds).
 - Never folded: an EC2 `stopped` or `terminated` event always opens its own incident.
@@ -109,7 +111,7 @@ incident per target** (an EC2 instance or an ECS service):
 
 The trade-off is that a different failure on the same instance inside the window is not investigated on its own.
 The investigation looks at the time around the first alarm and runs soon after it, so it does not cover a failure
-that starts later in the window. Check the incident's `suppressed_alarms` count if you suspect a second cause, and ask
+that starts later in the window. Check the incident's `suppressed_alarm_names` if you suspect a second cause, and ask
 in chat about the instance. Set 0 if you
 would rather have every alarm investigated and pay for it. A planned stop and start of an instance still opens an
 incident for the stop: pause model work first if that matters (see Maintenance below).

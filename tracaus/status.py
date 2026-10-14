@@ -47,6 +47,8 @@ def load(incident_id, *, allowed=None):
         )
     }
     result["incident_id"] = incident_id
+    if incident.get("suppressed_names"):
+        result["suppressed_alarm_names"] = sorted(incident["suppressed_names"])
     version = incident.get("report_version") or incident.get("checkpoint_version")
     if version:
         evidence = table.get_item(Key={"PK": pk, "SK": f"EVIDENCE#{version}"}, ConsistentRead=True).get(

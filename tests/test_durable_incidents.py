@@ -811,3 +811,31 @@ def test_superseded_queue_intent_cannot_start_another_model_attempt(monkeypatch)
     assert result == {"batchItemFailures": []}
     store.claim.assert_not_called()
     model.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "folded,line", [(None, False), ({"tracaus-staging-i-1-disk", "ECS task stop"}, True)]
+)
+def test_report_email_names_alarms_folded_into_the_incident(monkeypatch, folded, line):
+    for key, value in {
+        "REPORTS_TOPIC_ARN": "reports",
+        "STATUS_BASE_URL": "https://customer.example/",
+    }.items():
+        monkeypatch.setenv(key, value)
+    store, sns, iid = MagicMock(), MagicMock(), "a" * 32
+    incident = {"instance_id": IID, "status": "COMPLETE", "report_version": "v1"}
+    if folded:
+        incident["suppressed_names"] = folded
+    store.get.side_effect = lambda pk, sk="META": (
+        {"status": "PENDING", "attempts": 0} if sk.startswith("NOTIFICATION") else incident
+    )
+    store.claim_notification.return_value = {"fencing_token": 1, "attempts": 1}
+    sns.publish.return_value = {"MessageId": "accepted"}
+    event = {"Records": [{"messageId": "one", "body": f"INCIDENT#{iid}|INTENT#REPORT#1"}]}
+    with (
+        patch.object(pipeline, "ledger", return_value=store),
+        patch.object(pipeline, "clients", return_value=sns),
+    ):
+        assert pipeline.report(event) == {"batchItemFailures": []}
+    message = sns.publish.call_args.kwargs["Message"]
+    assert ("Also alarmed during this incident: ECS task stop, tracaus-staging-i-1-disk" in message) is line

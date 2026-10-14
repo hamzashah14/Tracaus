@@ -39,6 +39,14 @@ def conditional(exc):
     )
 
 
+def suppressed_label(event):
+    """What to show for a folded event: an alarm's name, or the fact of another ECS task stop."""
+    if event["kind"] == "alarm":
+        arn_prefix = f"arn:aws:cloudwatch:{event['source_region']}:{event['source_account']}:alarm:"
+        return event["native_id"].removeprefix(arn_prefix)[:128]
+    return "ECS task stop"
+
+
 class Ledger:
     def __init__(self, table_name, client=None, table=None, region_name=None):
         self.name = table_name
@@ -134,9 +142,9 @@ class Ledger:
                     "Update": {
                         "TableName": self.name,
                         "Key": item({"PK": f"INCIDENT#{parent}", "SK": "META"}),
-                        "UpdateExpression": "ADD suppressed_alarms :one",
+                        "UpdateExpression": "ADD suppressed_alarms :one, suppressed_names :name",
                         "ConditionExpression": "attribute_exists(PK)",
-                        "ExpressionAttributeValues": item({":one": 1}),
+                        "ExpressionAttributeValues": item({":one": 1, ":name": {suppressed_label(event)}}),
                     }
                 },
             ]

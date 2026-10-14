@@ -56,3 +56,9 @@ def test_scoped_lookup_hides_an_incident_on_another_instance(storage):
 
 def test_scoped_lookup_with_an_empty_list_sees_nothing(storage):
     assert status.load(INCIDENT, allowed=frozenset()) is None
+
+
+def test_alarms_folded_into_the_incident_are_named(storage):
+    assert "suppressed_alarm_names" not in status.load(INCIDENT)
+    storage[(f"INCIDENT#{INCIDENT}", "META")]["suppressed_names"] = {"b-alarm", "a-alarm"}
+    assert status.load(INCIDENT)["suppressed_alarm_names"] == ["a-alarm", "b-alarm"]

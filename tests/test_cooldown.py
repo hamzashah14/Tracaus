@@ -79,7 +79,17 @@ def test_alarm_inside_the_window_is_stored_and_counted_but_starts_nothing():
     assert row["PK"]["S"].startswith("EVENT#") and row["suppressed_by"]["S"] == PARENT
     assert records[1]["ConditionCheck"]["ConditionExpression"] == "incident_id=:parent AND until_epoch>:now"
     assert records[2]["Update"]["Key"]["PK"]["S"] == f"INCIDENT#{PARENT}"
-    assert records[2]["Update"]["UpdateExpression"] == "ADD suppressed_alarms :one"
+    assert records[2]["Update"]["UpdateExpression"] == "ADD suppressed_alarms :one, suppressed_names :name"
+    assert records[2]["Update"]["ExpressionAttributeValues"][":name"] == {
+        "SS": [f"tracaus-staging-{IID}-cpu"]
+    }
+
+
+def test_a_different_alarm_inside_the_window_is_recorded_by_name():
+    ledger, client = store(window(600))
+    ledger.accept(event(suffix="disk"), 30, 15)
+    update = written(client)[1][2]["Update"]
+    assert update["ExpressionAttributeValues"][":name"] == {"SS": [f"tracaus-staging-{IID}-disk"]}
 
 
 def test_an_expired_window_opens_a_new_incident():
