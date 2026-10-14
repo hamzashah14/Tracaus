@@ -499,6 +499,27 @@ def test_cloud_change_set_template_mismatch_cannot_execute(spec):
     client.execute_change_set.assert_not_called()
 
 
+def test_change_set_sends_the_compact_text_the_size_guard_measures(spec, tmp_path, monkeypatch):
+    template = examples(spec)["foundation-monitor"]
+    (tmp_path / "foundation-monitor.json").write_text(json.dumps(template, indent=2, sort_keys=True) + "\n")
+    cfn = MagicMock()
+    monkeypatch.setattr(durable_ops, "clients", lambda *args: cfn)
+    monkeypatch.setattr(durable_ops, "require_reviewed_source", lambda bundle: None)
+    monkeypatch.setattr(durable_ops, "assert_account", lambda *args: None)
+    monkeypatch.setattr(durable_ops, "assert_stack_absent", lambda *args: None)
+    bundle = {
+        "spec": spec,
+        "review_hash": "a" * 64,
+        "stages": {"foundation-monitor": {"stack": "s"}},
+        "config": {},
+    }
+    durable_ops.change_set(bundle, tmp_path, "foundation-monitor")
+    sent = cfn.create_change_set.call_args.kwargs["TemplateBody"]
+    assert sent == templates.template_body(template)
+    assert len(sent) < len(json.dumps(template, indent=2, sort_keys=True))
+    assert templates.template_hash(json.loads(sent)) == templates.template_hash(template)
+
+
 def test_change_set_inspection_accepts_a_response_shaped_like_aws(spec):
     """DescribeChangeSet has no RoleARN; the stub is validated against the real service model."""
     body = {"Resources": {}}

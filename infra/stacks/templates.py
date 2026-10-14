@@ -517,5 +517,13 @@ def service_routing(spec):
     return t
 
 
+TEMPLATE_LIMIT = 51200  # bytes CloudFormation accepts in an inline TemplateBody
+
+
+def template_body(t):
+    """The exact text sent to CloudFormation: compact, so the size guard measures what is sent."""
+    return json.dumps(t, sort_keys=True, separators=(",", ":"))
+
+
 def template_hash(t):
-    return hashlib.sha256(json.dumps(t, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(template_body(t).encode()).hexdigest()

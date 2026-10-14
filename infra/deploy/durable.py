@@ -333,7 +333,7 @@ def render(
     bundle["review_hash"] = digest(bundle)
     output.mkdir(parents=True, exist_ok=True)
     for stage, value in stages.items():
-        if len(json.dumps(value).encode()) > 51200:
+        if len(templates.template_body(value).encode()) > templates.TEMPLATE_LIMIT:
             raise VerificationError("Durable template exceeds inline change-set limit")
         release.write_json(output / f"{stage}.json", value)
     release.write_json(output / "bundle.json", bundle)

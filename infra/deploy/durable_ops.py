@@ -213,7 +213,7 @@ def change_set(bundle, directory, stage):
         ChangeSetName="review-" + bundle["review_hash"][:24],
         ChangeSetType=kind,
         ClientToken=bundle["review_hash"],
-        TemplateBody=(directory / f"{stage}.json").read_text(),
+        TemplateBody=templates.template_body(json.loads((directory / f"{stage}.json").read_text())),
         Capabilities=["CAPABILITY_IAM"],
         RoleARN=spec["deployment_role_arn"],
         Tags=templates.tagged(spec),
