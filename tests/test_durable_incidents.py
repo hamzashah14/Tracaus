@@ -839,3 +839,41 @@ def test_report_email_names_alarms_folded_into_the_incident(monkeypatch, folded,
         assert pipeline.report(event) == {"batchItemFailures": []}
     message = sns.publish.call_args.kwargs["Message"]
     assert ("Also alarmed during this incident: ECS task stop, tracaus-staging-i-1-disk" in message) is line
+
+
+TABLE_PREFIXES = {  # what each function reads and writes: a partition-key family per line of ledger.py's use
+    "IngressRole": {"INCIDENT", "EVENT", "ALARM", "COOLDOWN"},
+    "DispatchRole": {"INCIDENT"},
+    "InvestigateRole": {"INCIDENT", "EVENT"},
+    "InitialRole": {"INCIDENT"},
+    "ReportRole": {"INCIDENT"},
+    "ReconcileRole": {"INCIDENT", "SWEEP"},
+}
+
+
+@pytest.mark.parametrize("role,prefixes", TABLE_PREFIXES.items())
+def test_each_function_reaches_only_its_own_partition_keys(role, prefixes):
+    from infra.spec import ROOT, load
+    from scripts.dev.validate_durable import examples
+
+    spec = load(ROOT / "examples/deployment.example.json")
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    runtime = examples(spec, config)["durable-runtime"]["Resources"][role]
+    statements = runtime["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+
+    def actions(statement):
+        return [statement["Action"]] if isinstance(statement["Action"], str) else statement["Action"]
+
+    items = [s for s in statements if {"dynamodb:GetItem", "dynamodb:Query"} & set(actions(s))]
+    table = [s for s in items if not s["Resource"].endswith("/index/*")]
+    indexes = [s for s in items if s["Resource"].endswith("/index/*")]
+    assert len(table) == 1
+    condition = table[0]["Condition"]
+    assert sorted(condition["ForAllValues:StringLike"]["dynamodb:LeadingKeys"]) == sorted(
+        p + "#*" for p in prefixes
+    )
+    assert condition["Null"] == {
+        "dynamodb:LeadingKeys": "false"
+    }  # ForAllValues is true when the key is absent
+    assert ("dynamodb:ConditionCheckItem" in actions(table[0])) is (role == "IngressRole")
+    assert bool(indexes) is (role == "ReconcileRole")

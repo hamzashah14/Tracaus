@@ -399,8 +399,21 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
     bucket = foundation_outputs["EvidenceBucket"]
     key_arn = foundation_outputs["EvidenceKeyArn"]
     queue_arns = {key: foundation_outputs[key + "QueueArn"] for key in QUEUES}
-    table_read = statement(["dynamodb:GetItem", "dynamodb:Query"], [table_arn, table_arn + "/index/*"])
-    table_write = statement(["dynamodb:UpdateItem", "dynamodb:PutItem"], table_arn)
+
+    def table(prefixes, *, check=False, indexes=False):
+        """Read and write the incident table, but only items whose partition key starts with one of `prefixes`.
+        Index queries carry no key condition (it would apply to the index's own keys), so only the function that
+        sweeps the indexes gets them."""
+        actions = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:UpdateItem", "dynamodb:PutItem"]
+        if check:  # TransactWriteItems asks for each operation's own action, ConditionCheck included
+            actions.append("dynamodb:ConditionCheckItem")
+        keys = {
+            "ForAllValues:StringLike": {"dynamodb:LeadingKeys": [prefix + "#*" for prefix in prefixes]},
+            "Null": {"dynamodb:LeadingKeys": "false"},
+        }
+        return [statement(actions, table_arn, Condition=keys)] + (
+            [statement("dynamodb:Query", table_arn + "/index/*")] if indexes else []
+        )
 
     def sqs_receive(key):
         return statement(
@@ -438,7 +451,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                     else {}
                 ),
             },
-            [table_read, table_write, sqs_receive("Ingress")],
+            [*table(["INCIDENT", "EVENT", "ALARM", "COOLDOWN"], check=True), sqs_receive("Ingress")],
             60,
         ),
         "incident_dispatch": (
@@ -451,8 +464,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                 },
             },
             [
-                table_read,
-                table_write,
+                *table(["INCIDENT"]),
                 statement(
                     [
                         "dynamodb:DescribeStream",
@@ -479,8 +491,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                 "BEDROCK_REGION": spec["bedrock_region"],
             },
             [
-                table_read,
-                table_write,
+                *table(["INCIDENT", "EVENT"]),
                 sqs_receive("Work"),
                 statement("s3:PutObject", f"arn:aws:s3:::{bucket}/incidents/*"),
                 statement(["kms:Encrypt", "kms:GenerateDataKey"], key_arn),
@@ -495,8 +506,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                 "STATUS_BASE_URL": config["status_base_url"],
             },
             [
-                table_read,
-                table_write,
+                *table(["INCIDENT"]),
                 sqs_receive("Initial"),
                 statement("sns:Publish", topic_arn(spec, "reports")),
             ],
@@ -510,8 +520,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                 "STATUS_BASE_URL": config["status_base_url"],
             },
             [
-                table_read,
-                table_write,
+                *table(["INCIDENT"]),
                 sqs_receive("Report"),
                 statement("sns:Publish", topic_arn(spec, "reports")),
             ],
@@ -527,8 +536,7 @@ def runtime(spec, config, artifacts, foundation_outputs, *, owned_bindings):
                 },
             },
             [
-                table_read,
-                table_write,
+                *table(["INCIDENT", "SWEEP"], indexes=True),
                 statement("sqs:SendMessage", [queue_arns[key] for key in ("Work", "Initial", "Report")]),
                 statement("sqs:SendMessage", foundation_outputs["StreamDeadArn"]),
             ],
