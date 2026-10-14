@@ -42,6 +42,18 @@ def failure(code):
     return ClientError(response, "TransactWriteItems")
 
 
+def test_legacy_eight_digit_instance_ids_are_accepted():
+    legacy = "i-0abc1234"
+    alarm = {
+        **ALARM,
+        "AlarmName": f"tracaus-staging-{legacy}-status",
+        "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:tracaus-staging-{legacy}-status",
+        "Trigger": {"Dimensions": [{"name": "InstanceId", "value": legacy}]},
+    }
+    event = normalize_sns(envelope(alarm), TOPIC, ACCOUNT, REGION, {legacy}, "tracaus-staging-")
+    assert event["instance_id"] == legacy
+
+
 def test_native_transition_identity_and_recovery_are_distinct():
     alarm = normalize(envelope())
     duplicate = normalize(envelope())

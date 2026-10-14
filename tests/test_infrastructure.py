@@ -28,6 +28,43 @@ def spec():
     return {**load(ROOT / "examples/deployment.example.json"), "reference_only": False}
 
 
+def written(tmp_path, change, text=lambda raw: raw):
+    value = json.loads((ROOT / "examples/deployment.example.json").read_text())
+    change(value)
+    path = tmp_path / "deployment.json"
+    path.write_text(text(json.dumps(value)))
+    return path
+
+
+@pytest.mark.parametrize(
+    "change,field",
+    [
+        (lambda v: v.update(project="tracaus\n"), "project"),
+        (lambda v: v.update(release_id=v["release_id"] + "\n"), "release_id"),
+        (lambda v: v["instances"][0].update(id=v["instances"][0]["id"] + "\r"), "instances.0.id"),
+    ],
+)
+def test_spec_refuses_line_breaks_the_schema_patterns_let_through(tmp_path, change, field):
+    with pytest.raises(ValueError, match=f"Invalid deployment field: {field}"):
+        load(written(tmp_path, change))
+
+
+def test_spec_refuses_non_finite_numbers(tmp_path):
+    def api(value):
+        value.pop("model_arns")
+        value["model_provider"] = "model_api"
+        value["model_api"] = {
+            "protocol": "openai",
+            "base_url": "https://models.example.com/v1",
+            "bytes_per_token": 3,
+        }
+
+    path = written(tmp_path, api, lambda raw: raw.replace('"bytes_per_token": 3', '"bytes_per_token": NaN'))
+    with pytest.raises(ValueError, match="finite"):
+        load(path)
+    assert load(written(tmp_path, api))["model_api"]["bytes_per_token"] == 3
+
+
 def test_same_and_split_region_ownership(spec):
     for region in ("eu-central-1", "us-east-1"):
         spec["bedrock_region"] = region

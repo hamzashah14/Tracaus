@@ -97,13 +97,33 @@ def ecs_targets(spec):
     }
 
 
+def _finite(token):
+    raise ValueError("Invalid deployment field: not a finite number")
+
+
+def _no_line_breaks(value, path=()):
+    """Schema patterns end in `$`, which Python also matches before a trailing newline."""
+    where = ".".join(map(str, path)) or "root"
+    if isinstance(value, str) and ("\n" in value or "\r" in value):
+        raise ValueError(f"Invalid deployment field: {where}")
+    if isinstance(value, dict):
+        if any("\n" in key or "\r" in key for key in value):
+            raise ValueError(f"Invalid deployment field: {where}")
+        for key, item in value.items():
+            _no_line_breaks(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _no_line_breaks(item, path + (index,))
+
+
 def load(path):
-    value = json.loads(Path(path).read_text())
+    value = json.loads(Path(path).read_text(), parse_constant=_finite)
     schema = json.loads((ROOT / "infra/deployment.schema.json").read_text())
     errors = sorted(Draft202012Validator(schema).iter_errors(value), key=lambda e: str(e.path))
     if errors:
         # No submitted values (which may contain secrets) in diagnostics.
         raise ValueError(f"Invalid deployment field: {'.'.join(map(str, errors[0].path)) or 'root'}")
+    _no_line_breaks(value)
     ids = [item["id"] for item in value["instances"]]
     everything = targets(value)
     if len(set(everything)) != len(everything):
