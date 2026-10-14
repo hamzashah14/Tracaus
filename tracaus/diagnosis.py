@@ -70,6 +70,28 @@ def scalar(entry, path):
     return str(value)
 
 
+def series(entry):
+    """A metric result's datapoints in time order, or None unless every one is a number inside the window."""
+    points = entry["result"].get("datapoints")
+    start, end = parse_utc(entry["window_start"]), parse_utc(entry["window_end"])
+    if not points or any(
+        type(p.get("value")) not in (int, float) or not start <= parse_utc(p["timestamp"]) <= end
+        for p in points
+    ):
+        return None
+    return sorted(points, key=lambda p: parse_utc(p["timestamp"]))
+
+
+def sustained(flags):
+    """A run of three matching points, or 80 percent of them. Healthy minutes either side of a fault must not
+    veto it, and one stray point must not make it."""
+    run = best = 0
+    for flag in flags:
+        run = run + 1 if flag else 0
+        best = max(best, run)
+    return bool(flags) and (best >= 3 or sum(flags) >= 0.8 * len(flags))
+
+
 def validate(raw, catalog):
     try:
         if len(raw.encode()) > 64000:
@@ -164,25 +186,27 @@ def validate(raw, catalog):
                 and e["result"].get("status") in {"ok", "no_matching_lines"}
             ]
 
-            def metric(name, predicate, namespace=None):
-                return any(
-                    e["tool"] == "fetch_metrics"
-                    and e["result"].get("descriptor", {}).get("metric_name") == name
-                    and (
-                        namespace is None
-                        or e["result"]["descriptor"].get("namespace", "").endswith(namespace)
-                    )
-                    and e["result"].get("datapoints")
-                    and all(
-                        type(p.get("value")) in (int, float)
-                        and predicate(p["value"])
-                        and parse_utc(e["window_start"])
-                        <= parse_utc(p["timestamp"])
-                        <= parse_utc(e["window_end"])
-                        for p in e["result"]["datapoints"]
-                    )
-                    for e in usable
-                )
+            def metric(name, predicate, namespace=None, begin=None, end=None):
+                """The metric held in the evidence, or in [begin, end) of it when a sub-window is given."""
+                for e in usable:
+                    if (
+                        e["tool"] == "fetch_metrics"
+                        and e["result"].get("descriptor", {}).get("metric_name") == name
+                        and (
+                            namespace is None
+                            or e["result"]["descriptor"].get("namespace", "").endswith(namespace)
+                        )
+                        and (points := series(e)) is not None
+                        and sustained(
+                            [
+                                predicate(p["value"])
+                                for p in points
+                                if begin is None or begin <= parse_utc(p["timestamp"]) < end
+                            ]
+                        )
+                    ):
+                        return True
+                return False
 
             fresh = metric("TelemetryFresh", lambda v: v == 1, "/Health")
             accesses = [
@@ -207,18 +231,6 @@ def validate(raw, catalog):
                     <= parse_utc(e["window_end"])
                 ]
 
-                def observed_during(begin, end, metric_name, expected):
-                    return any(
-                        e["tool"] == "fetch_metrics"
-                        and e["result"].get("descriptor", {}).get("metric_name") == metric_name
-                        and e["result"]["descriptor"].get("namespace", "").endswith("/Health")
-                        and any(
-                            p["value"] == expected and begin <= parse_utc(p["timestamp"]) < end
-                            for p in e["result"].get("datapoints", [])
-                        )
-                        for e in usable
-                    )
-
                 def traffic_during(begin, end):
                     return any(
                         isinstance(line, dict) and begin <= parse_utc(line.get("timestamp", "")) < end
@@ -228,13 +240,11 @@ def validate(raw, catalog):
                     )
 
                 if not (
-                    fresh
-                    and traffic
-                    and metric("Availability", lambda v: v == 0, "/Health")
+                    traffic
                     and value["hypotheses"]
                     and any(
-                        observed_during(begin, end, "TelemetryFresh", 1)
-                        and observed_during(begin, end, "Availability", 0)
+                        metric("TelemetryFresh", lambda v: v == 1, "/Health", begin, end)
+                        and metric("Availability", lambda v: v == 0, "/Health", begin, end)
                         and traffic_during(begin, end)
                         for begin, end in gaps
                     )
