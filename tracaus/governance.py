@@ -18,9 +18,17 @@ GRACE = 900
 MAX_ROWS = 10000
 
 
+def plain(value):
+    """What json cannot encode. A DynamoDB set has no order of its own; str() of one follows the process's hash
+    seed, so the same item hashed differently in the process that planned and the one that applied."""
+    if isinstance(value, (set, frozenset)):
+        return sorted(value, key=str)
+    return str(value)
+
+
 def digest(value):
     return hashlib.sha256(
-        json.dumps(value, sort_keys=True, default=str, separators=(",", ":")).encode()
+        json.dumps(value, sort_keys=True, default=plain, separators=(",", ":")).encode()
     ).hexdigest()
 
 
