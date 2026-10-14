@@ -761,15 +761,14 @@ def test_multiple_slow_services_have_independent_budgets_and_publish_before_fres
         for service in config["services"]:
             response = observability.observer({"mode": "health", "service_id": service["id"]}, context)
             assert response["status"] == "ATTENTION" and "CHECKS_INCOMPLETE" not in response["failures"]
-    assert cw.put_metric_data.call_count == 6
+    # Each service published its route result; none invented a TelemetryFresh point from its own failed read.
+    assert cw.put_metric_data.call_count == 3
     assert {
         c.kwargs["MetricData"][0]["Dimensions"][0]["Value"] for c in cw.put_metric_data.call_args_list
     } == {s["id"] for s in config["services"]}
-    assert all(
-        c.kwargs["MetricData"][0]["Value"] == 0
-        for c in cw.put_metric_data.call_args_list
-        if c.kwargs["MetricData"][0]["MetricName"] == "TelemetryFresh"
-    )
+    assert {c.kwargs["MetricData"][0]["MetricName"] for c in cw.put_metric_data.call_args_list} == {
+        "Availability"
+    }
     ledger.pending.assert_not_called()
 
 

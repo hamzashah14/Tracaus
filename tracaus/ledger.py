@@ -48,12 +48,12 @@ def suppressed_label(event):
 
 
 class Ledger:
-    def __init__(self, table_name, client=None, table=None, region_name=None):
+    def __init__(self, table_name, client=None, table=None, region_name=None, config=DATABASE_CONFIG):
         self.name = table_name
-        self.client = client or boto3.client("dynamodb", region_name=region_name, config=DATABASE_CONFIG)
-        self.table = table or boto3.resource(
-            "dynamodb", region_name=region_name, config=DATABASE_CONFIG
-        ).Table(table_name)
+        self.client = client or boto3.client("dynamodb", region_name=region_name, config=config)
+        self.table = table or boto3.resource("dynamodb", region_name=region_name, config=config).Table(
+            table_name
+        )
 
     def get(self, pk, sk="META"):
         return self.table.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True).get("Item")
