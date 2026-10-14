@@ -1,10 +1,13 @@
 import copy
 import json
+from datetime import datetime, timezone
 from unittest.mock import Mock
 
+import botocore.session
 import pytest
+from botocore.stub import Stubber
 
-from infra.deploy import durable_ops
+from infra.deploy import durable_ops, owned_ops
 from infra.deploy.verify import VerificationError
 from infra.spec import ROOT, load
 from infra.stacks import owned_runtime
@@ -282,3 +285,49 @@ def test_bedrock_ignores_model_secret_binding_and_never_needs_it():
     env = owned_runtime.environment(SPEC, BASE, data)
     assert "MODEL_API" not in env
     assert MODEL_SECRET["arn"] not in json.dumps(owned_runtime.model_permissions(SPEC, data))
+
+
+def test_agentcore_runtime_comparison_accepts_the_shape_aws_returns():
+    """GetAgentRuntime returns protocolConfiguration as a structure; the stub is validated against botocore."""
+    data = bindings(target="agentcore")
+    stages = examples(SPEC, {**BASE, "runtime_target": "agentcore"})
+    expected = stages["agentcore-runtime"]["Resources"]["Runtime"]["Properties"]
+    pinned = expected["AgentRuntimeArtifact"]["CodeConfiguration"]["Code"]["S3"]
+    remote = data["agentcore"]
+    artifact = {"bucket": pinned["Bucket"], "key": pinned["Prefix"], "version_id": pinned["VersionId"]}
+    client = botocore.session.get_session().create_client(
+        "bedrock-agentcore-control", region_name="us-east-1", aws_access_key_id="x", aws_secret_access_key="x"
+    )
+    response = {
+        "agentRuntimeArn": remote["RuntimeArn"],
+        "agentRuntimeName": "tracaus_test",
+        "agentRuntimeId": remote["RuntimeArn"].split("/")[-1],
+        "agentRuntimeVersion": remote["RuntimeVersion"],
+        "createdAt": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "lastUpdatedAt": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "roleArn": "arn:aws:iam::123456789012:role/r",
+        "status": "READY",
+        "agentRuntimeArtifact": {
+            "codeConfiguration": {
+                "code": {
+                    "s3": {
+                        "bucket": artifact["bucket"],
+                        "prefix": artifact["key"],
+                        "versionId": artifact["version_id"],
+                    }
+                },
+                "runtime": "PYTHON_3_12",
+                "entryPoint": ["tracaus_agentcore.py"],
+            }
+        },
+        "environmentVariables": expected["EnvironmentVariables"],
+        "networkConfiguration": {"networkMode": "PUBLIC"},
+        "protocolConfiguration": {"serverProtocol": "HTTP"},
+        "lifecycleConfiguration": {"idleRuntimeSessionTimeout": 60, "maxLifetime": 600},
+    }
+    with Stubber(client) as stub:
+        stub.add_response("get_agent_runtime", response)
+        actual = client.get_agent_runtime(agentRuntimeId="x")
+    assert not owned_ops.runtime_drifted(actual, remote, expected, artifact)
+    drifted = {**actual, "protocolConfiguration": {"serverProtocol": "MCP"}}
+    assert owned_ops.runtime_drifted(drifted, remote, expected, artifact)
