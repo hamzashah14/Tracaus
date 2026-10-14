@@ -7,7 +7,7 @@ import botocore.session
 import pytest
 from botocore.stub import Stubber
 
-from infra.deploy import durable_ops, owned_ops
+from infra.deploy import durable, durable_ops, owned_ops
 from infra.deploy.verify import VerificationError
 from infra.spec import ROOT, load
 from infra.stacks import owned_runtime
@@ -331,3 +331,16 @@ def test_agentcore_runtime_comparison_accepts_the_shape_aws_returns():
     assert not owned_ops.runtime_drifted(actual, remote, expected, artifact)
     drifted = {**actual, "protocolConfiguration": {"serverProtocol": "MCP"}}
     assert owned_ops.runtime_drifted(drifted, remote, expected, artifact)
+
+
+@pytest.mark.parametrize("target,fits", [("standalone", True), ("agentcore", False)])
+def test_agentcore_name_limit_is_checked_when_the_plan_is_made(tmp_path, target, fits):
+    long_names = {**SPEC, "project": "abcdefghijkl", "environment": "development", "release_id": "a" * 16}
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps({**BASE, "runtime_target": target}))
+    if fits:
+        assert durable.load_config(path, long_names)["runtime_target"] == target
+    else:
+        with pytest.raises(ValueError, match="48 characters"):
+            durable.load_config(path, long_names)
+    assert durable.load_config(path, SPEC)["runtime_target"] == target

@@ -47,6 +47,14 @@ def model_secret(spec, bindings):
     return value
 
 
+def runtime_name(spec):
+    """AgentCore allows 48 characters. durable.load_config checks this at plan time, before anything deploys."""
+    value = name(spec, "agentcore", True).replace("-", "_")
+    if len(value) > 48:
+        raise ValueError("AgentCore runtime name is longer than 48 characters; shorten project or release_id")
+    return value
+
+
 def validate_bindings(spec, config, bindings):
     if spec["executor_mode"] != "qualified":
         raise VerificationError("Owned runtime requires qualified tool executors")
@@ -73,7 +81,7 @@ def validate_bindings(spec, config, bindings):
         validate_target(
             remote["RuntimeArn"], remote["EndpointName"], spec["bedrock_region"], spec["account_id"]
         )
-        expected = name(spec, "agentcore", True).replace("-", "_")
+        expected = runtime_name(spec)
         if not remote["RuntimeArn"].split("/")[-1].startswith(expected + "-") or remote[
             "EndpointName"
         ] != "release_" + spec["release_id"].replace("-", "_"):
@@ -209,9 +217,6 @@ def agentcore_release(spec, config, bindings, artifact, version=None):
         "REPORT_BUCKET": foundation["EvidenceBucket"],
         "REPORT_KMS_KEY_ARN": foundation["EvidenceKeyArn"],
     }
-    runtime_name = name(spec, "agentcore", True).replace("-", "_")
-    if len(runtime_name) > 48:
-        raise VerificationError("AgentCore runtime name exceeds the service limit")
     t["Resources"]["ExecutionRole"] = role(
         spec,
         "bedrock-agentcore.amazonaws.com",
@@ -244,7 +249,7 @@ def agentcore_release(spec, config, bindings, artifact, version=None):
     t["Resources"]["Runtime"] = resource(
         "BedrockAgentCore::Runtime",
         {
-            "AgentRuntimeName": runtime_name,
+            "AgentRuntimeName": runtime_name(spec),
             "RoleArn": att("ExecutionRole"),
             "AgentRuntimeArtifact": {
                 "CodeConfiguration": {

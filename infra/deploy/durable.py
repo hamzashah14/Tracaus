@@ -59,6 +59,8 @@ def load_config(path, spec):
     ):
         raise ValueError("Select standalone or agentcore with explicit runtime limits")
     Limits(**value["runtime_limits"])
+    if value["runtime_target"] == "agentcore":
+        owned_runtime.runtime_name(spec)
     cooldown = value.get("incident_cooldown_minutes", 15)
     if type(cooldown) is not int or not 0 <= cooldown <= 120:
         raise ValueError("incident_cooldown_minutes must be a whole number of minutes from 0 to 120")
@@ -235,8 +237,7 @@ def render(
             if candidate:
                 runtime_id = candidate.get("RuntimeId", "")
                 if not re.fullmatch(
-                    re.escape(resource_name(spec, "agentcore", True).replace("-", "_") + "-")
-                    + r"[A-Za-z0-9]{10}",
+                    re.escape(owned_runtime.runtime_name(spec) + "-") + r"[A-Za-z0-9]{10}",
                     runtime_id,
                 ):
                     raise VerificationError("AgentCore candidate belongs to another release")
