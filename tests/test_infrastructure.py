@@ -65,6 +65,42 @@ def test_spec_refuses_non_finite_numbers(tmp_path):
     assert load(written(tmp_path, api))["model_api"]["bytes_per_token"] == 3
 
 
+def crowded(tmp_path, length, project="abcdefghijkl", environment="development"):
+    """Ten instances with eight existing log groups each; `length` is the size of every group name."""
+
+    def change(value):
+        value.update(project=project, environment=environment)
+        first = value["instances"][0]
+        value["instances"] = [
+            {
+                **first,
+                "id": f"i-{index:017x}",
+                "existing_log_groups": [{"name": f"/{index}/{n}/" + "a" * length} for n in range(8)],
+            }
+            for index in range(10)
+        ]
+
+    return written(tmp_path, change)
+
+
+def test_log_policy_estimate_never_undercounts_the_rendered_role_policy(tmp_path):
+    from infra.spec import IAM_INLINE_LIMIT
+
+    length = 1
+    while True:
+        try:
+            load(crowded(tmp_path, length + 1))
+        except ValueError:
+            break
+        length += 1
+    spec = {**load(crowded(tmp_path, length)), "reference_only": False}
+    logs_role = examples(spec)["owned-tools"]["Resources"]["LogsRole"]
+    size = len(json.dumps(logs_role["Properties"]["Policies"][0]["PolicyDocument"], separators=(",", ":")))
+    assert IAM_INLINE_LIMIT - 400 < size <= IAM_INLINE_LIMIT  # accepted, and close to the real limit
+    with pytest.raises(ValueError, match="log tool's IAM policy"):
+        load(crowded(tmp_path, length + 1))
+
+
 def test_same_and_split_region_ownership(spec):
     for region in ("eu-central-1", "us-east-1"):
         spec["bedrock_region"] = region

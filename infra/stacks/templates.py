@@ -14,6 +14,7 @@ from infra.spec import (
     ecs_targets,
     event_rules,
     existing_log_groups,
+    log_group_arn,
     log_groups,
     log_prefix,
     name,
@@ -342,10 +343,7 @@ def tools_release(spec, artifacts, secret):
             else {}
         ),
     }
-    logs_arns = [
-        f"arn:aws:logs:{spec['monitor_region']}:{spec['account_id']}:log-group:{group}:*"
-        for group in readable_log_groups(spec)
-    ]
+    logs_arns = [log_group_arn(spec, group) for group in readable_log_groups(spec)]
     region_condition = {"StringEquals": {"aws:RequestedRegion": spec["monitor_region"]}}
     add_function(
         t,

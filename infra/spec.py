@@ -8,6 +8,8 @@ from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_TARGETS = 10  # EC2 instances and ECS services together
+IAM_INLINE_LIMIT = 10240  # characters across a role's inline policies
+LOGS_POLICY_FIXED = 1000  # characters of the log tool's policy besides its group ARNs; measured at about 700
 MAX_ECS_INGRESS_BYTES = (
     2500  # of the 4 KiB a Lambda environment may render to, beside the ingestion's own settings
 )
@@ -215,6 +217,13 @@ def load(path):
         pairs = [(entry["group"], entry["file"]) for entry in item.get("log_files", [])]
         if len(set(pairs)) != len(pairs) or any(g not in known or ".." in f.split("/") for g, f in pairs):
             raise ValueError("Invalid log_files: unique files, each for one of the instance's own log groups")
+    # One ARN per readable group goes into the log tool's role policy, which IAM caps at 10,240 characters.
+    arn_size = sum(len(log_group_arn(value, group)) + 3 for group in readable_log_groups(value))
+    if arn_size + LOGS_POLICY_FIXED > IAM_INLINE_LIMIT:
+        raise ValueError(
+            "Too many or too long log group names: the log tool's IAM policy would exceed "
+            f"{IAM_INLINE_LIMIT} characters ({arn_size + LOGS_POLICY_FIXED}). List fewer log groups."
+        )
     return value
 
 
@@ -507,6 +516,10 @@ def existing_log_groups(spec):
         }
     )
     return found
+
+
+def log_group_arn(spec, group):
+    return f"arn:aws:logs:{spec['monitor_region']}:{spec['account_id']}:log-group:{group}:*"
 
 
 def readable_log_groups(spec):
