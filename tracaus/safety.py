@@ -30,17 +30,28 @@ PATTERNS = [
 ]
 
 
+# Escapes of control characters and Unicode line breaks. They stay as typed (%0d%0a), so a logged URL cannot
+# turn one message into two lines of evidence.
+KEPT_ESCAPE = re.compile(r"(?i)%(?:0[0-9a-f]|1[0-9a-f]|7f)|%c2%85|%e2%80%a[89]")
+
+
+def decode(value):
+    return unquote(KEPT_ESCAPE.sub(lambda match: match.group().replace("%", "%25"), value))
+
+
 def text(value):
     if not isinstance(value, str) or len(value.encode()) > LIMIT:
         raise ValueError("Sensitive content exceeds the redaction boundary")
-    # Bound decoding layers; reject ambiguous over-encoding instead of passing it.
+    # Decode up to eight layers so encoded secrets are visible to the patterns below.
     for _ in range(8):
-        decoded = unquote(value)
+        decoded = decode(value)
         if decoded == value:
             break
         value = decoded
-    if unquote(value) != value:
-        raise ValueError("Sensitive content is excessively encoded")
+    if decode(value) != value:
+        # Nobody writes a log line with more layers than that. Hide the whole value, since a secret may sit in
+        # any of the layers left, and do not raise: one such line would otherwise fail every result holding it.
+        return "[redacted-over-encoded]"
     for pattern, replacement in PATTERNS:
         if replacement is None:
 

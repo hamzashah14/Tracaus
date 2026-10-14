@@ -405,6 +405,33 @@ def test_encoded_escaped_and_ipv6_fixture_profiles_remain_redacted(raw):
     assert safety.text(cleaned) == cleaned
 
 
+def test_encoded_line_breaks_stay_encoded_so_a_message_cannot_forge_a_second_line():
+    cleaned = safety.text("GET /x%0d%0a2026-10-14T10:00:00Z ERROR admin session opened for root HTTP/1.1")
+    assert "\r" not in cleaned and "\n" not in cleaned and "%0d%0a" in cleaned
+    assert safety.text("a%250D%250Ab") == "a%0D%0Ab"  # also behind a second layer
+    assert safety.text("a\nb\tc") == "a\nb\tc"  # a genuine multi-line message is untouched
+    assert "\u2028" not in safety.text("x%E2%80%A8y") and "\x85" not in safety.text("x%C2%85y")
+    assert safety.text("%E2%82%AC") == "\u20ac"  # ordinary encoded text is still decoded
+    assert safety.text(cleaned) == cleaned
+
+
+@pytest.mark.parametrize("layers", range(1, 13))
+def test_over_encoding_never_raises_and_never_leaks(layers):
+    from urllib.parse import quote
+
+    value = "password=fixture-sensitive-marker"
+    for _ in range(layers):
+        value = quote(value, safe="")
+    cleaned = safety.text(value)
+    assert "fixture-sensitive-marker" not in cleaned
+    assert cleaned == ("[redacted-over-encoded]" if layers > 8 else "password=[redacted]")
+    assert safety.text(cleaned) == cleaned
+    # One poisoned message does not fail the result that carries it.
+    assert safety.bounded({"lines": [{"message": value}, {"message": "fine"}]})["lines"][1] == {
+        "message": "fine"
+    }
+
+
 @pytest.fixture
 def recipients(monkeypatch):
     from infra.spec import topic_arn
