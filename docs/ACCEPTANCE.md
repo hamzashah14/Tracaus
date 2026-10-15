@@ -90,10 +90,12 @@ enabled that option.
   and nothing else when `trustedUserHeaders` is set or XSRF protection is off.
   How: remove a signed-in test user and reload ([OPERATE.md](OPERATE.md#team-access-and-secret-rotation)). Break the
   file on staging and reload. Set `trustedUserHeaders` or turn XSRF protection off, restart, and open the UI.
-- [ ] **The audit line (team mode only).** Each chat request, report view and refused sign-in writes one JSON line on
-  your platform's log, with no prompt or log text.
+- [ ] **The audit line (team mode only).** Each chat request, report view and refused sign-in writes one JSON line to
+  the UI's standard output and to the CloudWatch Logs group `/PROJECT/ENVIRONMENT/audit`, with no prompt or log text.
   How: ask a question that contains a unique marker word, then check that the log lines show `sub`, `role`, `action`,
-  `outcome` and token counts, and that the marker appears in none of them.
+  `outcome` and token counts, and that the marker appears in none of them. Check the group has them too, and that the
+  UI shows no warning about audit records. Then remove `AUDIT_LOG_GROUP` from the UI's environment and confirm the
+  warning appears.
 - [ ] **The hourly limit (team mode only).** The per-person limit holds in one UI process and resets when it restarts.
   How: set `chat_per_user_per_hour` to 2 on staging and send two requests. That browser session then stops
   accepting questions. Sign in as the same person in a second browser session and ask one more: it is refused and the

@@ -5,7 +5,7 @@ import json
 from botocore.exceptions import ClientError
 
 from infra.deploy.verify import VerificationError
-from infra.spec import ecs_services, prefix
+from infra.spec import boundary_arn, ecs_services, log_prefix, prefix, tags
 from infra.stacks.templates import bucket_name
 
 # Creation APIs frequently require '*'; these checks deliberately expose that
@@ -47,7 +47,7 @@ RESOURCE_ACTIONS = {
     "cloudwatch": ["PutMetricAlarm", "PutDashboard", "TagResource"],
     "secretsmanager": ["CreateSecret", "DescribeSecret", "GetRandomPassword", "TagResource"],
     "iam": ["CreateRole", "GetRole", "PutRolePolicy", "TagRole"],
-    "kms": ["CreateKey", "CreateAlias", "PutKeyPolicy", "EnableKeyRotation", "DescribeKey", "TagResource"],
+    "kms": ["CreateKey", "EnableKeyRotation", "DescribeKey", "TagResource"],
 }
 
 
@@ -102,12 +102,27 @@ def permission_requests(spec, config):
             "sqs": f"arn:aws:sqs:{region}:{account}:{project}-*",
             "dynamodb": f"arn:aws:dynamodb:{region}:{account}:table/{project}-*",
             "lambda": f"arn:aws:lambda:{region}:{account}:function:{project}-*",
-            "logs": f"arn:aws:logs:{region}:{account}:log-group:*",
+            "logs": f"arn:aws:logs:{region}:{account}:log-group:{log_prefix(spec)}/*",
             "events": f"arn:aws:events:{region}:{account}:rule/{project}-*",
-            "cloudwatch": "*",
+            "cloudwatch": f"arn:aws:cloudwatch:{region}:{account}:alarm:{project}-*",
             "secretsmanager": f"arn:aws:secretsmanager:{region}:{account}:secret:{project}/*",
             "iam": f"arn:aws:iam::{account}:role/{spec['project']}/{spec['environment']}/*",
-            "kms": "*",
+            "kms": f"arn:aws:kms:{region}:{account}:key/*",
+        }
+        function = f"arn:aws:lambda:{region}:{account}:function:{project}-screen"
+        # Calls the execution role may make only under a condition: the screen supplies that condition's value.
+        special = {
+            "iam:CreateRole": (None, {"iam:PermissionsBoundary": boundary_arn(spec)}),
+            "iam:PutRolePolicy": (None, {"iam:PermissionsBoundary": boundary_arn(spec)}),
+            "kms:CreateKey": ("*", {f"aws:RequestTag/{k}": v for k, v in tags(spec).items()}),
+            "kms:TagResource": ("*", {f"aws:RequestTag/{k}": v for k, v in tags(spec).items()}),
+            "lambda:CreateEventSourceMapping": ("*", {"lambda:FunctionArn": function}),
+            "lambda:UpdateEventSourceMapping": (
+                f"arn:aws:lambda:{region}:{account}:event-source-mapping:*",
+                {"lambda:FunctionArn": function},
+            ),
+            "cloudwatch:PutDashboard": (f"arn:aws:cloudwatch::{account}:dashboard/{project}-*", None),
+            "secretsmanager:GetRandomPassword": ("*", None),
         }
         for service, actions in RESOURCE_ACTIONS.items():
             if region != spec["monitor_region"] and service not in {
@@ -119,15 +134,8 @@ def permission_requests(spec, config):
             }:
                 continue
             for action in actions:
-                resource = resources[service]
-                if action in {
-                    "CreateKey",
-                    "GetRandomPassword",
-                    "CreateEventSourceMapping",
-                    "UpdateEventSourceMapping",
-                }:
-                    resource = "*"
-                add(execution, region, [f"{service}:{action}"], resource)
+                resource, context = special.get(f"{service}:{action}", (None, None))
+                add(execution, region, [f"{service}:{action}"], resource or resources[service], context)
         for service in ("lambda.amazonaws.com", "bedrock-agentcore.amazonaws.com"):
             if service.startswith("bedrock") and config["runtime_target"] != "agentcore":
                 continue

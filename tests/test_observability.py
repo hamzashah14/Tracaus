@@ -9,6 +9,7 @@ from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from infra.deploy import observations
 from infra.deploy.verify import PendingConfirmation, VerificationError
@@ -97,16 +98,61 @@ def test_mixed_dns_answer_denied_and_public_connection_uses_pinned_ip():
     create.return_value.close.assert_called_once()
 
 
-@pytest.mark.parametrize("status,body", [(503, b""), (302, b""), (200, b"x" * 4097)])
-def test_unhealthy_dependency_redirect_and_large_body_fail_without_following(status, body):
+def answers(*addresses):
+    return lambda *a, **k: [(None, None, None, None, (address, 443)) for address in addresses]
+
+
+@pytest.mark.parametrize("status", [503, 302])
+def test_unhealthy_dependency_and_redirect_fail_without_following(status):
     create = MagicMock()
     create.return_value.getresponse.return_value.status = status
-    create.return_value.getresponse.return_value.read.return_value = body
-    result = probes.check(
-        ROUTE, resolve=lambda *a, **k: [(None, None, None, None, ("1.1.1.1", 443))], connection=create
-    )
-    assert not result["healthy"] and create.return_value.request.call_count == 1
+    result = probes.check(ROUTE, resolve=answers("1.1.1.1"), connection=create)
+    assert not result["healthy"] and result["code"] == "STATUS_OR_LATENCY"
+    assert create.return_value.request.call_count == 1
     create.return_value.close.assert_called_once()
+
+
+def test_a_large_body_is_not_an_outage():
+    create = MagicMock()
+    create.return_value.getresponse.return_value.status = 200
+    create.return_value.getresponse.return_value.read.return_value = b"x" * 4096
+    assert probes.check(ROUTE, resolve=answers("1.1.1.1"), connection=create)["healthy"]
+    create.return_value.getresponse.return_value.read.assert_called_once_with(4096)  # bounded, not judged
+
+
+def test_ipv4_is_tried_before_ipv6_and_by_number_not_by_text():
+    create = MagicMock()
+    create.return_value.getresponse.return_value.status = 200
+    # as text, "2600:..." sorts before "52.1.2.3" and "104.16.0.1" sorts before "52.1.2.3"
+    result = probes.check(
+        ROUTE, resolve=answers("2600:1f18:3::1", "104.16.0.1", "52.1.2.3"), connection=create
+    )
+    assert result["healthy"] and create.call_args.args[1] == "52.1.2.3"
+
+
+def test_the_next_address_is_tried_only_after_a_connection_error():
+    refused, working = MagicMock(), MagicMock()
+    refused.request.side_effect = ConnectionRefusedError()
+    working.getresponse.return_value.status = 200
+    create = MagicMock(side_effect=[refused, working])
+    result = probes.check(ROUTE, resolve=answers("2606:4700::1", "104.16.0.1"), connection=create)
+    assert result["healthy"] and [c.args[1] for c in create.call_args_list] == ["104.16.0.1", "2606:4700::1"]
+    refused.close.assert_called_once()
+    working.close.assert_called_once()
+    # every address refusing is a failed check, with every connection closed
+    first, second = MagicMock(), MagicMock()
+    first.request.side_effect = second.request.side_effect = OSError()
+    result = probes.check(
+        ROUTE, resolve=answers("1.1.1.1", "8.8.8.8"), connection=MagicMock(side_effect=[first, second])
+    )
+    assert result["code"] == "CONNECT_OR_READ_FAILED" and not result["healthy"]
+    first.close.assert_called_once()
+    second.close.assert_called_once()
+    # a 503 on the first address is an answer: the second address is not asked
+    create = MagicMock()
+    create.return_value.getresponse.return_value.status = 503
+    probes.check(ROUTE, resolve=answers("1.1.1.1", "8.8.8.8"), connection=create)
+    assert create.call_count == 1
 
 
 def test_absolute_probe_timeout_kills_and_reaps_child():
@@ -211,7 +257,9 @@ def test_canary_isolated_topic_scope_and_no_model_work_intent(environment):
 def test_expectation_persisted_before_send_and_ambiguous_repeat_reuses_identity(environment):
     ledger, sns = MagicMock(), MagicMock()
     saved = []
-    ledger.table.put_item.side_effect = lambda **k: saved.append(k["Item"])
+    ledger.table.put_item.side_effect = lambda **k: (
+        None if k["Item"]["PK"] == "CANARY#SINCE" else saved.append(k["Item"])
+    )
     ledger.get.side_effect = lambda *a: saved[-1]
     sns.publish.return_value = {"MessageId": "synthetic-publisher-id"}
     with (
@@ -226,6 +274,106 @@ def test_expectation_persisted_before_send_and_ambiguous_repeat_reuses_identity(
         ledger.get.side_effect = lambda *a: saved[0]
         assert observability.canary_sender()["status"] == "ALREADY_PUBLISHED"
     assert sns.publish.call_count == 1
+
+
+def test_sender_records_when_it_first_ran_and_tolerates_the_row_existing(environment):
+    ledger, sns = MagicMock(), MagicMock()
+    saved = []
+
+    def put(**kwargs):
+        if kwargs["Item"]["PK"] == "CANARY#SINCE":
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
+        saved.append(kwargs["Item"])
+
+    ledger.table.put_item.side_effect = put
+    ledger.get.side_effect = lambda *a: saved[-1]
+    sns.publish.return_value = {"MessageId": "id"}
+    with (
+        patch.object(observability, "store", return_value=ledger),
+        patch.object(observability, "clients", return_value=sns),
+    ):
+        assert observability.canary_sender()["status"] == "PUBLISHED"
+    first = ledger.table.put_item.call_args_list[0].kwargs
+    assert (
+        first["Item"]["PK"] == "CANARY#SINCE" and first["ConditionExpression"] == "attribute_not_exists(PK)"
+    )
+
+
+class Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def get(self, pk, sk="META"):
+        return self.rows.get(pk)
+
+
+PERIOD = CONFIG["canary_interval_minutes"] * 60
+DEADLINE = CONFIG["receipt_deadline_seconds"]
+
+
+@pytest.mark.parametrize("after", [60, DEADLINE - 1, DEADLINE + 1, PERIOD - 1])
+def test_a_dead_sender_stays_reported_across_the_slot_rollover(environment, after):
+    slot = 100 * PERIOD
+    ledger = Rows({"CANARY#SINCE": {"since": 10 * PERIOD + 3}})  # it ran for a while, then died
+    assert "CANARY_MISSING" in observability.verify_canary(ledger, CONFIG, slot + after)[0]
+
+
+def test_a_sender_that_has_not_run_yet_is_reported_only_after_its_own_deadline(environment):
+    slot = 100 * PERIOD
+    ledger = Rows({})
+    assert "CANARY_MISSING" not in observability.verify_canary(ledger, CONFIG, slot + 60)[0]
+    assert "CANARY_MISSING" in observability.verify_canary(ledger, CONFIG, slot + DEADLINE + 1)[0]
+    # started in the middle of the previous slot: that slot never had a boundary to run at
+    ledger = Rows({"CANARY#SINCE": {"since": slot - PERIOD // 2}})
+    assert "CANARY_MISSING" not in observability.verify_canary(ledger, CONFIG, slot + 60)[0]
+
+
+def test_observer_clients_retry_transient_errors_the_pipeline_clients_do_not(environment, monkeypatch):
+    import boto3
+
+    from tracaus import pipeline
+
+    configs = []
+
+    def record(*args, **kwargs):
+        configs.append(kwargs["config"])
+        return MagicMock()
+
+    monkeypatch.setattr(boto3, "client", record)
+    monkeypatch.setattr(boto3, "resource", record)
+    observability.clients("sns")
+    observability.store()  # a DynamoDB client and resource
+    pipeline.clients("sns")
+    observed, pipelined = configs[:-1], configs[-1]
+    assert len(observed) == 3
+    assert all(c.retries == {"mode": "standard", "total_max_attempts": 3} for c in observed)
+    assert pipelined.retries == {"total_max_attempts": 1}
+
+
+def observe_health(freshness, monkeypatch):
+    monkeypatch.setenv("HEALTH_NAMESPACE", "tracaus/staging/Health")
+    client, ledger = MagicMock(), MagicMock()
+    with (
+        patch.object(observability, "store", return_value=ledger),
+        patch.object(observability, "clients", return_value=client),
+        patch.object(probes, "bounded_check", return_value={"healthy": True, "code": "OK", "latency_ms": 5}),
+        patch.object(observability, "check_freshness", side_effect=freshness),
+        patch.object(observability, "emit"),
+    ):
+        result = observability.observer({"mode": "health", "service_id": CONFIG["services"][0]["id"]})
+    written = [c.kwargs["MetricData"][0] for c in client.put_metric_data.call_args_list]
+    return result, {m["MetricName"]: m["Value"] for m in written}
+
+
+def test_a_failed_freshness_read_publishes_no_telemetry_point(environment, monkeypatch):
+    result, points = observe_health(RuntimeError("ServiceUnavailable"), monkeypatch)
+    assert result["failures"] == ["TELEMETRY_READ_FAILED"] and points == {"Availability": 1}
+
+
+def test_a_stale_collector_still_publishes_telemetry_fresh_zero(environment, monkeypatch):
+    result, points = observe_health([False], monkeypatch)
+    assert not result["failures"] and points == {"Availability": 1, "TelemetryFresh": 0}
+    assert observe_health([True], monkeypatch)[1]["TelemetryFresh"] == 1
 
 
 def test_recipient_receipt_is_conditional_and_never_reads_notification_body(environment):

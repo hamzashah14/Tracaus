@@ -21,9 +21,9 @@ class Ascii(io.StringIO):
 
 
 def test_clean_removes_escape_sequences_and_control_characters():
-    hostile = "web\x1b[2J\x1b[31m-1\x1b]0;title\x07\nname\r\x00‮evil​"
+    hostile = "web\x1b[2J\x1b[31m-1\x1b]0;title\x07\nname\r\x00\u202eevil\u200b"
     result = clean(hostile)
-    assert "\x1b" not in result and "\n" not in result and "‮" not in result
+    assert "\x1b" not in result and "\n" not in result and "\u202e" not in result
     assert result == "web-1 name evil"
 
 

@@ -422,6 +422,11 @@ class Driver:
             raise VerificationError("Existing stack is not owned by this deployment")
         return response
 
+    def assert_deployed_by_plan(self, bundle, current):
+        """DescribeChangeSet never reports the role, so check the stack once its change has run."""
+        if current.get("RoleARN") != bundle["spec"]["deployment_role_arn"]:
+            raise VerificationError("Stack was not deployed by the planned CloudFormation execution role")
+
     def template_matches(self, bundle, stage):
         info = bundle["stages"][stage]
         body = self.clients("cloudformation", info["region"]).get_template(StackName=info["stack"])[
@@ -454,6 +459,7 @@ class Driver:
             and current["StackStatus"] in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
             and self.template_matches(bundle, stage)
         ):
+            self.assert_deployed_by_plan(bundle, current)
             if info["create_only"]:
                 self.op(bundle, "seal-runtime", stage=stage)
             record["status"] = "COMPLETE"
@@ -499,6 +505,7 @@ class Driver:
                 and current["StackStatus"] in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
                 and self.template_matches(bundle, stage)
             ):
+                self.assert_deployed_by_plan(bundle, current)
                 record["status"] = "COMPLETE"
                 save()
                 return
@@ -677,40 +684,44 @@ def deploy(planned, directory, driver, *, allow_model=False, retry_canary=False)
             "MONITOR_REGION": planned["spec"]["monitor_region"],
             "INCIDENT_TABLE": state["bindings"]["foundation"]["TableName"],
             "REPORT_BUCKET": state["bindings"]["foundation"]["EvidenceBucket"],
+            "AUDIT_LOG_GROUP": state["bindings"]["foundation"]["AuditLogGroup"],
         }
         if planned["spec"]["environment"] != "staging":
             raise Waiting(
                 "Production candidates provisioned; existing gates require separately qualified staging and production cutover"
             )
-        if not allow_model:
-            raise Waiting("Candidate ready: resume with --allow-model-invocation")
-        # Paid work is not blindly repeated on an ambiguous failure.
-        receipt = state.get("canary")
-        if receipt:
-            from infra.deploy.release import require_receipt
+        receipt = retirement = None
+        # Once routing is in place a late email click must not demand a second paid canary.
+        if state["stages"].get("routing", {}).get("status") != "COMPLETE":
+            if not allow_model:
+                raise Waiting("Candidate ready: resume with --allow-model-invocation")
+            # Paid work is not blindly repeated on an ambiguous failure.
+            receipt = state.get("canary")
+            if receipt:
+                from infra.deploy.release import require_receipt
 
-            try:
-                require_receipt(bundle, receipt)
-            except VerificationError:
+                try:
+                    require_receipt(bundle, receipt)
+                except VerificationError:
+                    raise Waiting(
+                        "Canary receipt expired/differs; inspect it and explicitly use --retry-canary for new paid work"
+                    ) from None
+            elif state.get("canary_requested"):
                 raise Waiting(
-                    "Canary receipt expired/differs; inspect it and explicitly use --retry-canary for new paid work"
-                ) from None
-        elif state.get("canary_requested"):
-            raise Waiting(
-                "Previous paid canary outcome is ambiguous; inspect private result before explicitly authorizing --retry-canary"
-            )
-        else:
-            state["canary_requested"] = True
-            save()
-            receipt = driver.op(bundle, "canary", allow_model_invocation="")
-            state["canary"] = receipt
-            save()
-        private_json(directory / "canary.json", receipt)
-        retirement = driver.op(bundle, "retirement-plan", receipt=directory / "canary.json")
-        if retirement.get("disable_alarms") or retirement.get("unsubscribe"):
-            raise Waiting(
-                "Legacy resource retirement requires separate review; automation never deletes subscriptions or alarms"
-            )
+                    "Previous paid canary outcome is ambiguous; inspect private result before explicitly authorizing --retry-canary"
+                )
+            else:
+                state["canary_requested"] = True
+                save()
+                receipt = driver.op(bundle, "canary", allow_model_invocation="")
+                state["canary"] = receipt
+                save()
+            private_json(directory / "canary.json", receipt)
+            retirement = driver.op(bundle, "retirement-plan", receipt=directory / "canary.json")
+            if retirement.get("disable_alarms") or retirement.get("unsubscribe"):
+                raise Waiting(
+                    "Legacy resource retirement requires separate review; automation never deletes subscriptions or alarms"
+                )
         stage("routing", receipt=receipt, retirement=retirement)
         if "observability" in planned["spec"]:
             stage("observations")

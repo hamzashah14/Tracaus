@@ -19,6 +19,13 @@ from tracaus.transport import clip_utf8
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNTERS = ("tokens_reserved", "model_steps", "tool_calls", "log_queries")
+DAILY_TOKEN_BUDGET = (
+    2_000_000  # tokens all incident investigations may reserve per UTC day; deployment.json overrides
+)
+STOP_TEXT = {
+    "DAILY_BUDGET_EXHAUSTED": "The daily token budget is used up, so no investigation was run. It resets at 00:00 UTC. "
+    "Operator review required."
+}
 DEFAULT_TOOLS = ("fetch_logs", "fetch_metrics")  # EC2 targets; ECS services add fetch_ecs
 TOOL_NAMES = DEFAULT_TOOLS + ("fetch_ecs",)
 
@@ -473,10 +480,18 @@ def run(
             messages.append({"role": "user", "content": results})
         raise RuntimeStop("STEP_LIMIT")
     except RuntimeStop as exc:
-        emit("model", "LIMIT_REACHED", metrics={"Deadline": int(str(exc) == "DEADLINE")})
+        emit(
+            "model",
+            "LIMIT_REACHED",
+            metrics={
+                "Deadline": int(str(exc) == "DEADLINE"),
+                "DailyBudget": int(str(exc) == "DAILY_BUDGET_EXHAUSTED"),
+            },
+        )
         return {
             "version": 1,
-            "text": (
+            "text": STOP_TEXT.get(str(exc))
+            or (
                 "Investigation incomplete; no validated diagnosis is available. Operator review required."
                 if structured
                 else clip_utf8(text, 64000)

@@ -35,11 +35,29 @@ def allowed(statements, action, resource, context):
             continue
         if not any(matches(r, resource) for r in listed(statement["Resource"])):
             continue
-        conditions = statement.get("Condition", {}).get("StringEquals", {})
-        if any(context.get(key) != value for key, value in conditions.items()):
+        if not conditions_hold(statement.get("Condition", {}), context):
             continue
         return True
     return False
+
+
+def conditions_hold(condition, context):
+    """StringEquals and StringLike against the request context. Any other operator fails the test loudly, so a
+    new kind of condition is never silently ignored."""
+    for operator, pairs in condition.items():
+        for key, wanted in pairs.items():
+            value = context.get(key)
+            if value is None:
+                return False
+            if operator == "StringEquals":
+                holds = value in listed(wanted)
+            elif operator == "StringLike":
+                holds = any(matches(pattern, value) for pattern in listed(wanted))
+            else:
+                raise AssertionError(f"This evaluator does not know {operator}")
+            if not holds:
+                return False
+    return True
 
 
 def policies(template):
@@ -223,3 +241,196 @@ def test_cli_refuses_an_invalid_spec_without_echoing_values(tmp_path):
     )
     assert result.returncode == 1 and "SECRET-VALUE" not in result.stderr + result.stdout
     assert not (tmp_path / "x.json").exists()
+
+
+# ---- the permissions boundary and the scoped execution role --------------------------------------------------
+
+
+def every_stage():
+    """Every rendered template of every example deployment: EC2, observers, ECS, a model API, both runtime
+    targets, one region and two."""
+    from scripts.dev import validate_infrastructure, validate_observations
+    from scripts.dev.validate_durable import examples
+
+    model_api = json.loads((ROOT / "examples/deployment.example.json").read_text())
+    model_api.pop("model_arns")
+    model_api.update(
+        model_provider="model_api", model_api={"protocol": "openai", "base_url": "https://api.example.com/v1"}
+    )
+    specs = {
+        "ec2": SPEC,
+        "observers": load(ROOT / "examples/observability.example.json"),
+        "ecs": load(ROOT / "examples/ecs.example.json"),
+        "model-api": model_api,
+    }
+    stages = []
+    for name, base in specs.items():
+        for region in (base["bedrock_region"], "us-east-1"):
+            spec = {**base, "bedrock_region": region}
+            for target in ("standalone", "agentcore"):
+                if name == "model-api" and target == "agentcore":
+                    continue  # a model API runs only in the standalone runtime
+                config = {**CONFIG, "runtime_target": target}
+                rendered = (
+                    validate_observations.fixtures(spec, config)
+                    if "observability" in spec
+                    else examples(spec, config)
+                )
+                stages.append((f"{name}-{region}-{target}", spec, rendered))
+            stages.append(
+                (
+                    f"{name}-{region}-infra",
+                    spec,
+                    validate_infrastructure.examples({**spec, "reference_only": False}),
+                )
+            )
+    return stages
+
+
+def role_grants(template):
+    for logical, resource in template["Resources"].items():
+        if resource["Type"] != "AWS::IAM::Role":
+            continue
+        for policy in resource["Properties"].get("Policies", []):
+            for statement in policy["PolicyDocument"]["Statement"]:
+                yield logical, resource, statement
+
+
+def test_every_role_a_stack_creates_carries_the_boundary():
+    from infra.spec import boundary_arn
+
+    seen = 0
+    for label, spec, rendered in every_stage():
+        for stage, template in rendered.items():
+            for logical, resource in template["Resources"].items():
+                if resource["Type"] == "AWS::IAM::Role":
+                    seen += 1
+                    assert resource["Properties"]["PermissionsBoundary"] == boundary_arn(spec), (
+                        label,
+                        stage,
+                        logical,
+                    )
+    assert seen > 100  # a render that produced no roles would pass vacuously
+
+
+def test_no_role_asks_for_more_than_the_boundary_allows():
+    """The boundary is the union of what the functions need; a new permission in any stage must be added to it."""
+    checked = 0
+    for label, spec, rendered in every_stage():
+        agentcore = label.endswith("agentcore")
+        boundary = bootstrap_iam.boundary_policy(spec, agentcore or "agentcore" in label)
+        context = {**bootstrap_iam.own_tags(spec, "aws:ResourceTag")}
+        for stage, template in rendered.items():
+            for logical, _, statement in role_grants(template):
+                assert statement["Effect"] == "Allow"
+                for action in listed(statement["Action"]):
+                    for resource in listed(statement["Resource"]):
+                        assert isinstance(resource, str), (label, stage, logical, action, resource)
+                        wanted = {
+                            **context,
+                            **{
+                                key: listed(value)[0]
+                                for pairs in statement.get("Condition", {}).values()
+                                for key, value in pairs.items()
+                            },
+                        }
+                        assert allowed(boundary, action, resource, wanted), (
+                            label,
+                            stage,
+                            logical,
+                            action,
+                            resource,
+                        )
+                        checked += 1
+    assert checked > 1000
+
+
+def test_the_boundary_is_a_managed_policy_within_its_size_limit_and_names_no_iam_or_sts():
+    template = bootstrap_iam.render(SPEC, agentcore=True)
+    policy = template["Resources"]["RuntimeBoundary"]
+    assert policy["Type"] == "AWS::IAM::ManagedPolicy"
+    assert policy["Properties"]["ManagedPolicyName"] == "tracaus-staging-runtime-boundary"
+    assert template["Outputs"]["RuntimeBoundaryArn"]["Value"] == {"Ref": "RuntimeBoundary"}
+    document = policy["Properties"]["PolicyDocument"]
+    assert len(json.dumps(document, separators=(",", ":"))) < 6144  # IAM's limit for a managed policy
+    for statement in document["Statement"]:
+        assert statement["Effect"] == "Allow"
+        assert not any(
+            a.startswith(("iam:", "sts:", "organizations:", "ec2:")) for a in listed(statement["Action"])
+        )
+    from infra.spec import boundary_arn
+
+    assert boundary_arn(SPEC).endswith("/" + "tracaus-staging-runtime-boundary")
+    assert boundary_arn(SPEC).startswith("arn:aws:iam::123456789012:policy/tracaus/staging/")
+
+
+def test_a_template_cannot_make_an_administrator_even_through_the_execution_role():
+    """What S1 was: the execution role could create any role in its path with any inline policy."""
+    execution = policies(bootstrap_iam.render(SPEC, agentcore=True))["customer-cfn-deployment"]
+    role = "arn:aws:iam::123456789012:role/tracaus/staging/anything"
+    boundary = "arn:aws:iam::123456789012:policy/tracaus/staging/tracaus-staging-runtime-boundary"
+    for action in (
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:DeleteRole",
+        "iam:UpdateRole",
+    ):
+        assert allowed(execution, action, role, {"iam:PermissionsBoundary": boundary}), action
+        assert not allowed(execution, action, role, {}), action  # no boundary, no change
+        assert not allowed(
+            execution, action, role, {"iam:PermissionsBoundary": "arn:aws:iam::aws:policy/x"}
+        ), action
+    for action in (
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:CreatePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+    ):
+        assert not allowed(execution, action, role, {"iam:PermissionsBoundary": boundary}), action
+
+
+def test_the_execution_role_cannot_touch_keys_log_groups_or_alarms_it_does_not_own():
+    """What S2 was: key policy, log groups, alarms and mappings on * or log-group:*."""
+    execution = policies(bootstrap_iam.render(SPEC, agentcore=True))["customer-cfn-deployment"]
+    key = "arn:aws:kms:eu-central-1:123456789012:key/example-key"
+    for action in ("kms:PutKeyPolicy", "kms:ScheduleKeyDeletion", "kms:CreateAlias", "kms:DeleteAlias"):
+        assert not allowed(execution, action, key, bootstrap_iam.own_tags(SPEC, "aws:ResourceTag")), action
+        assert not allowed(execution, action, "*", {}), action
+    own = bootstrap_iam.own_tags(SPEC, "aws:RequestTag")
+    assert allowed(execution, "kms:CreateKey", "*", own)
+    assert not allowed(execution, "kms:CreateKey", "*", {})  # an untagged key is not ours
+    assert not allowed(execution, "kms:CreateKey", "*", {**own, "aws:RequestTag/Project": "other"})
+    assert allowed(execution, "kms:TagResource", key, bootstrap_iam.own_tags(SPEC, "aws:ResourceTag"))
+    assert not allowed(execution, "kms:TagResource", key, {"aws:ResourceTag/Project": "other"})
+
+    groups = "arn:aws:logs:eu-central-1:123456789012:log-group:"
+    for action in ("logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:CreateLogGroup"):
+        assert allowed(
+            execution, action, groups + "/aws/lambda/tracaus-staging-example001-incident-ingress", {}
+        )
+        instance = SPEC["instances"][0]["id"]
+        assert allowed(execution, action, groups + f"/tracaus/staging/{instance}/application", {})
+        assert allowed(execution, action, groups + "/aws/bedrock-agentcore/runtimes/tracaus_staging_x-1", {})
+        assert not allowed(execution, action, groups + "/prod/payments/audit", {}), action
+        assert not allowed(execution, action, groups + "/aws/lambda/someone-elses-function", {}), action
+
+    alarms = "arn:aws:cloudwatch:eu-central-1:123456789012:alarm:"
+    for action in ("cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms"):
+        assert allowed(execution, action, alarms + "tracaus-staging-i-0123456789abcdef0-cpu", {})
+        assert not allowed(execution, action, alarms + "payments-high-latency", {}), action
+        assert not allowed(execution, action, "*", {}), action
+
+    own_function = {
+        "lambda:FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:tracaus-staging-x:1"
+    }
+    other_function = {"lambda:FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:billing"}
+    assert allowed(execution, "lambda:CreateEventSourceMapping", "*", own_function)
+    assert not allowed(execution, "lambda:CreateEventSourceMapping", "*", other_function)
+    mapping = "arn:aws:lambda:eu-central-1:123456789012:event-source-mapping:abc"
+    assert allowed(execution, "lambda:DeleteEventSourceMapping", mapping, own_function)
+    assert not allowed(execution, "lambda:DeleteEventSourceMapping", mapping, other_function)

@@ -415,3 +415,90 @@ def test_a_stopped_task_without_a_stop_time_is_kept_and_one_still_running_is_not
     result = run(stubs(service(), [unknown, stopping], health()))
     contract(result)
     assert [(t["task"], t["stopped_at"]) for t in result["stopped_tasks"]] == [("a" * 32, None)]
+
+
+def many_stopped(count, minutes=-1):
+    tasks = []
+    for n in range(count):
+        task = stopped(minutes=minutes - n % 5)
+        task["taskArn"] = task["taskArn"][:-6] + f"{n:06d}"
+        tasks.append(task)
+    return tasks
+
+
+def paged_stubs(tasks, page_sizes, more=False):
+    """list_tasks answers in pages of the given sizes (the last one offers another page when `more`)."""
+    ecs, stub = make("ecs")
+    stub.add_response(
+        "describe_services",
+        {"services": [service()], "failures": []},
+        {"cluster": "prod-cluster", "services": ["orders-api"]},
+    )
+    first = 0
+    for page, size in enumerate(page_sizes):
+        arns = [t["taskArn"] for t in tasks[first : first + size]]
+        first += size
+        last = page == len(page_sizes) - 1
+        stub.add_response(
+            "list_tasks",
+            {"taskArns": arns, **({"nextToken": f"page{page + 1}"} if not last or more else {})},
+            {
+                "cluster": "prod-cluster",
+                "serviceName": "orders-api",
+                "desiredStatus": "STOPPED",
+                "maxResults": 100,
+                **({"nextToken": f"page{page}"} if page else {}),
+            },
+        )
+    for start in range(0, len(tasks), 100):
+        batch = tasks[start : start + 100]
+        stub.add_response(
+            "describe_tasks",
+            {"tasks": batch, "failures": []},
+            {"cluster": "prod-cluster", "tasks": [t["taskArn"] for t in batch]},
+        )
+    stub.add_response("describe_task_definition", definition(), {"taskDefinition": TASK_DEFINITION})
+    elb, elb_stub = make("elbv2")
+    elb_stub.add_response("describe_target_health", health(), {"TargetGroupArn": TG})
+    return {"ecs": (ecs, stub), "elbv2": (elb, elb_stub)}
+
+
+def test_every_page_of_stopped_tasks_is_read_and_the_cut_is_declared(scope):
+    tasks = many_stopped(250)
+    found = paged_stubs(tasks, [100, 100, 50])
+    result = run(found)
+    found["ecs"][1].assert_no_pending_responses()  # three list_tasks calls and three describe_tasks batches
+    contract(result)
+    assert len(result["stopped_tasks"]) == 10
+    assert result["truncated"] is True and result["complete"] is False and result["status"] == "partial"
+
+
+def test_a_page_limit_hit_is_declared_even_when_nothing_in_the_window_was_cut(scope):
+    old = many_stopped(500, minutes=-120)  # all outside the window: no row is dropped by a cap
+    result = run(paged_stubs(old, [100] * 5, more=True))
+    assert result["stopped_tasks"] == []
+    assert result["truncated"] is True and result["complete"] is False and result["status"] == "partial"
+
+
+def test_an_answer_that_lost_nothing_stays_complete(scope):
+    result = run(paged_stubs(many_stopped(3), [3]))
+    assert result["status"] == "ok" and result["complete"] is True and result["truncated"] is False
+
+
+def test_every_cap_that_drops_a_row_is_noted():
+    notes = []
+    assert ecs_tool.cap(list(range(5)), 5, notes) == [0, 1, 2, 3, 4] and not notes
+    assert ecs_tool.cap(list(range(6)), 5, notes) == [0, 1, 2, 3, 4] and notes == [5]
+    deployments = [
+        {"createdAt": at(-n), "status": "ACTIVE", "taskDefinition": TASK_DEFINITION} for n in range(7)
+    ]
+    notes.clear()
+    ecs_tool.service_block(service(deployments=deployments), notes)
+    assert notes == [ecs_tool.MAX_DEPLOYMENTS]
+    notes.clear()
+    events = [{"createdAt": at(-1) + timedelta(seconds=n), "message": "m"} for n in range(25)]
+    kept = ecs_tool.service_events(service(events=events), at(-5), at(0), notes)
+    assert len(kept) == ecs_tool.MAX_EVENTS and notes == [ecs_tool.MAX_EVENTS]
+    assert kept[-1]["at"] == (at(-1) + timedelta(seconds=24)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )  # the newest are kept

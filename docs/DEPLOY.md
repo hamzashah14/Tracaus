@@ -253,6 +253,7 @@ with the configured CI/operator role credentials" otherwise.
 | Roles and recipient | `ci_principal_arn`, `deployment_role_arn`, `ui_principal_arn`: explicit, different roles in `account_id`. `notification_email` (one address) or `notification_emails` (a list of 1 to 5), not both: everyone listed receives the alerts and reports |
 | Model (Bedrock, the default) | `model_id` and `model_arns` (1 to 10 ARNs of a foundation model or inference profile; a profile must belong to your account, and every model behind a profile must also be listed). If `model_id` is an ARN it must be in `model_arns`. To use a model API instead, see section 8: it replaces these fields |
 | Switches | `maintenance_mode`: keep `false` (true disables routing). `reserved_concurrency`: leave `null`. 0 needs `maintenance_mode`, and the value is only used for a headroom check |
+| Daily token budget | `daily_token_budget` (optional, 1 to 1000000000, default 2000000): tokens all incident investigations together may reserve per UTC day. Each model step reserves its input plus output tokens, and a reservation is never refunded, so the real use is lower. When the day is used up, new investigations stop without a model call, their report says so, and they resume at 00:00 UTC. The `DailyBudget` metric in the `Pipeline` namespace counts the refusals. Chat in the UI has its own per-session limits and is not counted |
 | Retention | `log_retention_days`: 7, 14, 30, 60, 90, 180 or 365. `log_segment`: empty, or up to 24 letters, digits, `_` or `-`, added to log group names |
 | Servers | `instances`: 0 to 10 (at most 10 targets with `ecs_services`, and at least one target). Each needs `id` (`i-` plus 8 or 17 hex digits), `log_groups` (up to 8 names of up to 40 letters, digits, `_` or `-`, which Tracaus creates), `disk_path` (absolute path such as `/`), `resource_alarms`, `nginx_alarm`, `process_exe` (`null` or an executable name). Optional: `existing_log_groups`, up to 8 log groups that already exist and that Tracaus only reads (see [SERVERS.md](SERVERS.md#use-log-groups-that-already-exist)), and `log_files`, up to 16 files the generated agent file ships (see [SERVERS.md](SERVERS.md#step-1-install-the-cloudwatch-agent)). Each instance needs at least one group of either kind |
 | ECS services | `ecs_services` (optional, up to 10): each has `id` (`ecs-` plus up to 24 letters, digits or `_`), `cluster`, `service`, `load_balancer` (**required**: `null`, or the ALB and target group ARNs) and optionally `existing_log_groups`, `resource_alarms`, `container_insights`. Find the values with `python -m infra ecs-discover`. See [SERVERS.md](SERVERS.md#ecs-services) |
@@ -335,8 +336,18 @@ What the roles can do:
   create roles or functions itself.
 - **CloudFormation execution.** Only the CloudFormation service can assume it. It creates the
   resources whose names start with `PROJECT-ENVIRONMENT-`, and IAM roles only under the path
-  `/PROJECT/ENVIRONMENT/`, with inline policies and no managed-policy attachment. Because it can create
-  roles, treat it as a powerful role and keep the stack's template review (`dry-run`) in the process.
+  `/PROJECT/ENVIRONMENT/`, with inline policies and no managed-policy attachment. It can create, change
+  or delete such a role only while the permissions boundary `PROJECT-ENVIRONMENT-runtime-boundary` (made by
+  the same template) is attached, and it may not change or remove that boundary. Every role in Tracaus's
+  stacks carries it, so a template that gives a role more than the functions need (an administrator
+  policy, say) gains nothing: the role gets the smaller of the two. The boundary allows only what the
+  functions use, on resources named `PROJECT-ENVIRONMENT-*`, plus read-only log and metric queries. It
+  grants no IAM, STS or EC2 action. Its own policy is `PROJECT-ENVIRONMENT-runtime-boundary`; a test renders
+  every role of every stack and fails if one asks for more. The role may also create KMS keys only when
+  they carry your project's tags, and it can neither change a key's policy nor schedule its deletion; it
+  can touch only the log groups, alarms, dashboards and event source mappings of this deployment. Keep
+  the stack's template review (`dry-run`) in the process: the boundary caps what roles can do, not what
+  the stacks' own resources do.
 - **UI principal.** May only assume the role Tracaus generates for the UI.
 
 The template allows more than the screened actions where an update or delete needs it (for example
@@ -766,10 +777,12 @@ sign-in again.
 - **Remove a person:** delete their entry. The file is re-read when it changes, so it applies on
   their next request. An in-flight request finishes. There is no remote logout. Also disable them
   at the identity provider.
-- **Audit:** each chat request, report view and refused sign-in prints one JSON line to the UI's
-  standard output: time, subject, role, action, outcome, token counts, and the instance for report
-  views. It never contains prompt, log or error text. Keep that output in your platform's log
-  service. The outcomes are listed in [OPERATE.md](OPERATE.md#team-access-and-secret-rotation).
+- **Audit:** each chat request, report view and refused sign-in writes one JSON line to the UI's
+  standard output and to the CloudWatch Logs group `/PROJECT/ENVIRONMENT/audit` (retention
+  `log_retention_days`; the UI role may only create streams and put events there): time, subject, role,
+  action, outcome, token counts, and the instance for report views. It never contains prompt, log or
+  error text. If a write fails, or `AUDIT_LOG_GROUP` is not set, the line stays on standard output and
+  the UI shows a warning. The outcomes are listed in [OPERATE.md](OPERATE.md#team-access-and-secret-rotation).
 - **Limits:** the hourly limit is counted per person inside one UI process. It is shared across
   that person's browser sessions, it resets on restart, and several processes would each count
   separately. Run one process.

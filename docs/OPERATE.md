@@ -100,8 +100,10 @@ incident per target** (an EC2 instance or an ECS service):
 - The first alarm for an instance opens an incident, investigates it and starts a window of
   `incident_cooldown_minutes` (default 15, set in `runtime.json`, 0 turns it off, maximum 120).
 - Any other alarm for that instance inside the window is stored with its original event and counted on the open
-  incident (`suppressed_alarms` on the incident status page). It starts no investigation and sends no email. The
-  window does not extend, so a long outage opens a new incident every 15 minutes at most.
+  incident (`suppressed_alarms` on the incident status page, with the alarm names in `suppressed_alarm_names`). It
+  starts no investigation and sends no email of its own; the incident's report email lists the names under "Also
+  alarmed during this incident". The window does not extend, so a long outage opens a new incident every 15 minutes
+  at most.
 - If observers are on, the OK transition of a folded alarm still links to the open incident.
 - Folded: alarms, and the task-stop events of an ECS service (a crash loop stops a task every few seconds).
 - Never folded: an EC2 `stopped` or `terminated` event always opens its own incident.
@@ -109,7 +111,7 @@ incident per target** (an EC2 instance or an ECS service):
 
 The trade-off is that a different failure on the same instance inside the window is not investigated on its own.
 The investigation looks at the time around the first alarm and runs soon after it, so it does not cover a failure
-that starts later in the window. Check the incident's `suppressed_alarms` count if you suspect a second cause, and ask
+that starts later in the window. Check the incident's `suppressed_alarm_names` if you suspect a second cause, and ask
 in chat about the instance. Set 0 if you
 would rather have every alarm investigated and pay for it. A planned stop and start of an instance still opens an
 incident for the stop: pause model work first if that matters (see Maintenance below).
@@ -141,6 +143,11 @@ scale-in stop is not an incident, so a normal release does not page you.
   dead-letter queue (DLQ, `-dead`) that receives a message after five failed receives. There are also
   `-delivery-dead`, `-stream-dead`, `-observation-dead` and the `-observation-receipts` queue. Any DLQ message
   raises an alarm. SQS deletes messages after 14 days, so triage well before.
+- **Parallel investigations.** The work queue runs as many investigations at once as you have targets (at least 2,
+  at most 10), so a fleet-wide event does not queue later incidents past their 600 s deadline. Each running
+  investigation is a Lambda execution, so check that your account's Lambda concurrency limit allows it. If a
+  backlog still forms, the `-work-age` alarm (without observers; with observers, `WorkAge`) fires when the oldest
+  waiting message is older than 5 minutes.
 - **Ledger.** The incident DynamoDB table is the authority on what Tracaus accepted. SQS counts are approximate and the
   pending-intents index is eventually consistent, so read queue age and ledger state together.
 - **Sweeps.** Four independent sweeps run every minute: pending intents, overdue incidents, expired workers and
@@ -228,7 +235,8 @@ or invalid file stops the UI, and it never opens to everyone. Review the list mo
 incident or provider change. Rehearse secret rotation quarterly.
 
 **Read the audit line (team mode only).** Each chat request, report view and refused sign-in writes one JSON object
-to the UI's standard output. It has `ts`, `event` (always `tracaus.audit`), `sub`, `role`, `instance`, `action` and
+to the UI's standard output and to the CloudWatch Logs group `/PROJECT/ENVIRONMENT/audit`, one log stream per UI
+process (query it with Logs Insights). It has `ts`, `event` (always `tracaus.audit`), `sub`, `role`, `instance`, `action` and
 `outcome`, plus `instance_count` and `tokens` (`input` and `output` counts only) when they apply. It never contains
 prompt, log or exception text.
 
@@ -238,8 +246,9 @@ prompt, log or exception text.
   that does not finish is `ERROR` or `PARTIAL`.
 - A refused sign-in is written once per browser session and reason, and a report view once per incident in a browser
   session. A person who is not on the list and reloads in new sessions writes one line per session, and the rate is
-  not capped. Put the log under your platform's normal log retention and alerting. The audit trail is only as
-  durable as the platform that keeps standard output.
+  not capped. The log group keeps lines for `log_retention_days`. If the UI cannot write to it (or `AUDIT_LOG_GROUP`
+  is missing from its environment) it shows a warning and the lines exist only on standard output, so keep that
+  output under your platform's log retention as well.
 - The hourly chat limit is counted per person (`sub`) in memory in one UI process, across that person's browser
   sessions. It resets when the UI restarts, and a second process counts separately.
 
@@ -303,7 +312,7 @@ Before relying on a provider, complete the Model API items in [ACCEPTANCE.md](AC
 | Data | Where and how long |
 |---|---|
 | Incident evidence and reports | Private versioned KMS bucket. Lifecycle and incident TTL follow `retention_days` in `runtime.json` (7 to 365). |
-| Team audit lines (team mode only) | One JSON line per event on the UI's standard output. Kept as long as your platform's log service keeps them. Subject, role, action, outcome and token counts, never prompt or log text. |
+| Team audit lines (team mode only) | One JSON line per event in the CloudWatch Logs group `/PROJECT/ENVIRONMENT/audit` (`log_retention_days`) and on the UI's standard output. Subject, role, action, outcome and token counts, never prompt or log text. |
 | Raw logs and provider data | Stay in your systems. CloudWatch Logs follow `log_retention_days` in `deployment.json`. |
 | Excerpts and questions sent to a Model API provider | Held by that provider under its own terms. Tracaus cannot erase them. |
 | Erasure tombstones | 35 days live. Keep your own private purge registry through the longest backup or export window. |

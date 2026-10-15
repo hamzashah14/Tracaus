@@ -39,13 +39,21 @@ def conditional(exc):
     )
 
 
+def suppressed_label(event):
+    """What to show for a folded event: an alarm's name, or the fact of another ECS task stop."""
+    if event["kind"] == "alarm":
+        arn_prefix = f"arn:aws:cloudwatch:{event['source_region']}:{event['source_account']}:alarm:"
+        return event["native_id"].removeprefix(arn_prefix)[:128]
+    return "ECS task stop"
+
+
 class Ledger:
-    def __init__(self, table_name, client=None, table=None, region_name=None):
+    def __init__(self, table_name, client=None, table=None, region_name=None, config=DATABASE_CONFIG):
         self.name = table_name
-        self.client = client or boto3.client("dynamodb", region_name=region_name, config=DATABASE_CONFIG)
-        self.table = table or boto3.resource(
-            "dynamodb", region_name=region_name, config=DATABASE_CONFIG
-        ).Table(table_name)
+        self.client = client or boto3.client("dynamodb", region_name=region_name, config=config)
+        self.table = table or boto3.resource("dynamodb", region_name=region_name, config=config).Table(
+            table_name
+        )
 
     def get(self, pk, sk="META"):
         return self.table.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True).get("Item")
@@ -134,9 +142,9 @@ class Ledger:
                     "Update": {
                         "TableName": self.name,
                         "Key": item({"PK": f"INCIDENT#{parent}", "SK": "META"}),
-                        "UpdateExpression": "ADD suppressed_alarms :one",
+                        "UpdateExpression": "ADD suppressed_alarms :one, suppressed_names :name",
                         "ConditionExpression": "attribute_exists(PK)",
-                        "ExpressionAttributeValues": item({":one": 1}),
+                        "ExpressionAttributeValues": item({":one": 1, ":name": {suppressed_label(event)}}),
                     }
                 },
             ]
@@ -477,6 +485,33 @@ class Ledger:
                 raise RuntimeStop("BUDGET_OR_LEASE_EXHAUSTED") from None
             raise
         return {key: int(result[key]) for key in COUNTERS}
+
+    def reserve_daily(self, tokens, budget, now=None):
+        """Count tokens against today's (UTC) account-wide budget, never refunded: a reservation whose model call
+        is lost still counts, as it does per incident. RuntimeStop when the day has no room left."""
+        from tracaus.runtime import RuntimeStop
+
+        now = int(time.time() if now is None else now)
+        if type(tokens) is not int or tokens < 1 or type(budget) is not int or budget < 1:
+            raise ValueError("Invalid daily budget reservation")
+        if tokens > budget:
+            raise RuntimeStop("DAILY_BUDGET_EXHAUSTED")
+        try:
+            self.table.update_item(
+                Key={"PK": "BUDGET#" + time.strftime("%Y-%m-%d", time.gmtime(now)), "SK": "META"},
+                UpdateExpression="ADD tokens_reserved :tokens SET #t=:ttl",
+                ConditionExpression="attribute_not_exists(tokens_reserved) OR tokens_reserved<=:room",
+                ExpressionAttributeNames={"#t": "ttl"},
+                ExpressionAttributeValues={
+                    ":tokens": tokens,
+                    ":room": budget - tokens,
+                    ":ttl": now + 3 * 86400,
+                },
+            )
+        except ClientError as exc:
+            if conditional(exc):
+                raise RuntimeStop("DAILY_BUDGET_EXHAUSTED") from None
+            raise
 
     def record_usage(self, claim, input_tokens, output_tokens):
         """Observed usage is a lower bound after lost responses; reservations stay authoritative."""

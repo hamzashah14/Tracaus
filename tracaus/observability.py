@@ -7,14 +7,27 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
+import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from tracaus import probes
 from tracaus.incident import normalize_sns
 from tracaus.ledger import Ledger, conditional
-from tracaus.pipeline import clients, env, partial_batch
+from tracaus.pipeline import env, partial_batch
 from tracaus.telemetry import emit
 from tracaus.time import iso_utc
+
+# Unlike the incident pipeline, which hands a failed step to its queue, a scheduled observer has no second chance
+# before the next slot, so a transient AWS error is retried here. Every write it makes is idempotent.
+CLIENT_CONFIG = Config(
+    connect_timeout=3, read_timeout=8, retries={"mode": "standard", "total_max_attempts": 3}
+)
+CALL_SECONDS = 36  # worst case of one call: three attempts of connect and read timeout, plus the back-off
+
+
+def clients(service):
+    return boto3.client(service, region_name=env("MONITOR_REGION"), config=CLIENT_CONFIG)
 
 
 def settings():
@@ -26,7 +39,7 @@ def settings():
 
 
 def store():
-    return Ledger(env("INCIDENT_TABLE"), region_name=env("MONITOR_REGION"))
+    return Ledger(env("INCIDENT_TABLE"), region_name=env("MONITOR_REGION"), config=CLIENT_CONFIG)
 
 
 def slot_at(now, config):
@@ -64,6 +77,15 @@ def canary_sender(event=None, context=None):
         env("ALARM_NAME_PREFIX"),
         canary_topic=env("CANARY_TOPIC_ARN"),
     )
+    try:
+        # When the sender first ran. Slots from then on must have a row, so a dead sender stays reported.
+        ledger.table.put_item(
+            Item={"PK": "CANARY#SINCE", "SK": "META", "since": now},
+            ConditionExpression="attribute_not_exists(PK)",
+        )
+    except ClientError as exc:
+        if not conditional(exc):
+            raise
     pk = f"CANARY#{slot}"
     expected = {
         "PK": pk,
@@ -192,13 +214,13 @@ class ObservationDeadline(RuntimeError):
     pass
 
 
-def require_time(deadline, seconds=11):
+def require_time(deadline, seconds=CALL_SECONDS):
     if deadline is not None and time.monotonic() + seconds >= deadline:
         raise ObservationDeadline("Observer deadline exhausted; checks remain incomplete")
 
 
 class TimedReads:
-    def __init__(self, client, deadline, seconds=11):
+    def __init__(self, client, deadline, seconds=CALL_SECONDS):
         self.client, self.deadline, self.seconds = client, deadline, seconds
 
     def __getattr__(self, name):
@@ -250,11 +272,16 @@ def verify_canary(ledger, config, now):
     period = config["canary_interval_minutes"] * 60
     problem, received, ack_times = [], False, []
     fingerprint = recipient_fingerprint(env("REPORTS_TOPIC_ARN"), env("PRIMARY_EMAIL"))
+    since = (ledger.get("CANARY#SINCE") or {}).get("since")
     # Include last period to catch a lost receipt across the schedule boundary.
     for slot in (current_slot, current_slot - period):
         row = ledger.get(f"CANARY#{slot}")
         if not row:
-            if slot == current_slot and now - slot > config["receipt_deadline_seconds"]:
+            # The current slot is judged once its deadline has passed. A past slot must have had a row if the
+            # sender had already run when it began; judging it keeps a dead sender reported after the rollover.
+            if (slot == current_slot and now - slot > config["receipt_deadline_seconds"]) or (
+                slot < current_slot and since is not None and slot >= since
+            ):
                 problem.append("CANARY_MISSING")
             continue
         incident = ledger.get(f"INCIDENT#{row['incident_id']}")
@@ -311,7 +338,7 @@ def observer(event=None, context=None):
         150, context.get_remaining_time_in_millis() / 1000 - 15 if context else 150
     )
     cw, logs, sns, ledger = clients("cloudwatch"), clients("logs"), clients("sns"), store()
-    cw, logs, ledger = TimedReads(cw, deadline), TimedReads(logs, deadline), TimedReads(ledger, deadline, 8)
+    cw, logs, ledger = TimedReads(cw, deadline), TimedReads(logs, deadline), TimedReads(ledger, deadline)
     failures, received, oldest = [], False, 0
     email_age = config["email_receipt_max_age_hours"] * 3600 + 1
     maintenance = os.getenv("MAINTENANCE_MODE") == "true"
@@ -341,8 +368,10 @@ def observer(event=None, context=None):
                 except ObservationDeadline:
                     raise
                 except Exception:
-                    healthy = False
+                    # Our own read failed: that says nothing about the collector. Write no point, so a diagnosis
+                    # never reads an invented TelemetryFresh=0; the alarm treats the gap as breaching.
                     failures.append("TELEMETRY_READ_FAILED")
+                    continue
                 cw.put_metric_data(
                     Namespace=env("HEALTH_NAMESPACE"),
                     MetricData=[

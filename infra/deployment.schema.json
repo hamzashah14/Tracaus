@@ -138,6 +138,12 @@
     "maintenance_mode": {
       "type": "boolean"
     },
+    "daily_token_budget": {
+      "description": "Tokens all incident investigations together may reserve per UTC day. When it is used up, new investigations stop with a note and resume at 00:00 UTC. Default 2000000.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
     "log_retention_days": {
       "enum": [
         7,

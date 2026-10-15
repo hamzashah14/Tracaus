@@ -9,11 +9,13 @@ import json
 
 from infra.spec import (
     alarm_descriptors,
+    boundary_arn,
     digest,
     ecs_services,
     ecs_targets,
     event_rules,
     existing_log_groups,
+    log_group_arn,
     log_groups,
     log_prefix,
     name,
@@ -75,6 +77,7 @@ def role(spec, principal, statements, *, service=True, conditions=None, release=
         "IAM::Role",
         {
             "Path": f"/{spec['project']}/{spec['environment']}/",
+            "PermissionsBoundary": boundary_arn(spec),
             "Tags": tagged(spec, release),
             "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [trust]},
             "Policies": [
@@ -342,10 +345,7 @@ def tools_release(spec, artifacts, secret):
             else {}
         ),
     }
-    logs_arns = [
-        f"arn:aws:logs:{spec['monitor_region']}:{spec['account_id']}:log-group:{group}:*"
-        for group in readable_log_groups(spec)
-    ]
+    logs_arns = [log_group_arn(spec, group) for group in readable_log_groups(spec)]
     region_condition = {"StringEquals": {"aws:RequestedRegion": spec["monitor_region"]}}
     add_function(
         t,
@@ -517,5 +517,13 @@ def service_routing(spec):
     return t
 
 
+TEMPLATE_LIMIT = 51200  # bytes CloudFormation accepts in an inline TemplateBody
+
+
+def template_body(t):
+    """The exact text sent to CloudFormation: compact, so the size guard measures what is sent."""
+    return json.dumps(t, sort_keys=True, separators=(",", ":"))
+
+
 def template_hash(t):
-    return hashlib.sha256(json.dumps(t, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(template_body(t).encode()).hexdigest()

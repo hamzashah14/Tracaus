@@ -34,8 +34,8 @@ class FakeResponse:
     def __init__(self, body, status=200):
         self.status, self._body = status, io.BytesIO(body)
 
-    def read(self, amount=-1):
-        return self._body.read(amount)
+    def read1(self, amount=-1):
+        return self._body.read1(amount)
 
     def __enter__(self):
         return self
@@ -712,6 +712,43 @@ def test_total_time_is_bounded_not_just_each_socket_read(monkeypatch):
     with pytest.raises(model_api.ModelAPIError) as caught:
         converse(api)
     assert caught.value.kind == "timeout"
+
+
+def test_a_slow_drip_is_cut_off_while_bytes_are_still_arriving(monkeypatch):
+    """A real HTTPResponse over a socket pair: one byte every 0.25 s for four seconds, TIMEOUT of one second."""
+    import http.client
+    import socket
+    import threading
+    import time
+
+    server, client = socket.socketpair()
+
+    def drip():
+        try:
+            server.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n")
+            for _ in range(16):
+                server.sendall(b"x")
+                time.sleep(0.25)
+        except OSError:
+            pass  # the client gave up and closed its end
+        finally:
+            server.close()
+
+    threading.Thread(target=drip, daemon=True).start()
+    response = http.client.HTTPResponse(client)
+    response.begin()
+
+    class Opener:
+        def open(self, request, timeout=None):
+            return response
+
+    monkeypatch.setattr(model_api, "TIMEOUT", 1)
+    api = model_api.ModelAPI(config(), secrets_client=FakeSecrets(), opener=Opener())
+    started = time.monotonic()
+    with pytest.raises(model_api.ModelAPIError) as caught:
+        converse(api)
+    assert caught.value.kind == "timeout"
+    assert time.monotonic() - started < 2.5  # read(65536) held it for the whole four seconds
 
 
 def test_requests_are_json_posts_with_the_socket_timeout():

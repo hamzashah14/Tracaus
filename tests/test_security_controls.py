@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 import time
 from io import BytesIO
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from infra.deploy.verify import VerificationError
 from infra.maintain import security_ops
 from infra.stacks import owned_runtime
 from scripts.dev import evaluate_diagnostics
+from tests.helpers import ROOT
 from tests.test_owned_runtime import BASE, SPEC, bindings
 from tests.test_runtime import answer, drive
 from tracaus import diagnosis, runtime, safety
@@ -197,6 +199,29 @@ def test_synthetic_security_cli_denies_before_aws(command, tmp_path, monkeypatch
     )
     assert security_ops.main() == 2 and not (tmp_path / "private.json").exists()
     assert "failed" in capsys.readouterr().err
+
+
+def test_erasure_digest_does_not_depend_on_the_hash_seed():
+    """A row with a DynamoDB set (recipient_message_ids) hashed differently per process, so apply refused."""
+    import subprocess
+    import sys
+
+    from tracaus.governance import digest
+
+    assert digest({"ids": {"b", "a", "c"}}) == digest({"ids": ["a", "b", "c"]})
+    code = "from tracaus.governance import digest; print(digest({'ids': {'m1', 'm2', 'm3', 'm4'}}))"
+    seen = {
+        subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=ROOT,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+        ).stdout
+        for seed in ("0", "1", "2", "3")
+    }
+    assert len(seen) == 1
 
 
 class EraseTable:
@@ -403,6 +428,33 @@ def test_encoded_escaped_and_ipv6_fixture_profiles_remain_redacted(raw):
     assert "fixture-sensitive-marker" not in cleaned and "suffix" not in cleaned
     assert "2001:db8::1" not in cleaned and "person@example.invalid" not in cleaned
     assert safety.text(cleaned) == cleaned
+
+
+def test_encoded_line_breaks_stay_encoded_so_a_message_cannot_forge_a_second_line():
+    cleaned = safety.text("GET /x%0d%0a2026-10-14T10:00:00Z ERROR admin session opened for root HTTP/1.1")
+    assert "\r" not in cleaned and "\n" not in cleaned and "%0d%0a" in cleaned
+    assert safety.text("a%250D%250Ab") == "a%0D%0Ab"  # also behind a second layer
+    assert safety.text("a\nb\tc") == "a\nb\tc"  # a genuine multi-line message is untouched
+    assert "\u2028" not in safety.text("x%E2%80%A8y") and "\x85" not in safety.text("x%C2%85y")
+    assert safety.text("%E2%82%AC") == "\u20ac"  # ordinary encoded text is still decoded
+    assert safety.text(cleaned) == cleaned
+
+
+@pytest.mark.parametrize("layers", range(1, 13))
+def test_over_encoding_never_raises_and_never_leaks(layers):
+    from urllib.parse import quote
+
+    value = "password=fixture-sensitive-marker"
+    for _ in range(layers):
+        value = quote(value, safe="")
+    cleaned = safety.text(value)
+    assert "fixture-sensitive-marker" not in cleaned
+    assert cleaned == ("[redacted-over-encoded]" if layers > 8 else "password=[redacted]")
+    assert safety.text(cleaned) == cleaned
+    # One poisoned message does not fail the result that carries it.
+    assert safety.bounded({"lines": [{"message": value}, {"message": "fine"}]})["lines"][1] == {
+        "message": "fine"
+    }
 
 
 @pytest.fixture

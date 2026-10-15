@@ -3,8 +3,10 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import botocore.session
 import pytest
 from botocore.exceptions import ClientError
+from botocore.stub import Stubber
 
 from infra.deploy import durable, durable_ops, release
 from infra.deploy.verify import (
@@ -24,6 +26,79 @@ from scripts.dev.validate_infrastructure import examples
 @pytest.fixture
 def spec():
     return {**load(ROOT / "examples/deployment.example.json"), "reference_only": False}
+
+
+def written(tmp_path, change, text=lambda raw: raw):
+    value = json.loads((ROOT / "examples/deployment.example.json").read_text())
+    change(value)
+    path = tmp_path / "deployment.json"
+    path.write_text(text(json.dumps(value)))
+    return path
+
+
+@pytest.mark.parametrize(
+    "change,field",
+    [
+        (lambda v: v.update(project="tracaus\n"), "project"),
+        (lambda v: v.update(release_id=v["release_id"] + "\n"), "release_id"),
+        (lambda v: v["instances"][0].update(id=v["instances"][0]["id"] + "\r"), "instances.0.id"),
+    ],
+)
+def test_spec_refuses_line_breaks_the_schema_patterns_let_through(tmp_path, change, field):
+    with pytest.raises(ValueError, match=f"Invalid deployment field: {field}"):
+        load(written(tmp_path, change))
+
+
+def test_spec_refuses_non_finite_numbers(tmp_path):
+    def api(value):
+        value.pop("model_arns")
+        value["model_provider"] = "model_api"
+        value["model_api"] = {
+            "protocol": "openai",
+            "base_url": "https://models.example.com/v1",
+            "bytes_per_token": 3,
+        }
+
+    path = written(tmp_path, api, lambda raw: raw.replace('"bytes_per_token": 3', '"bytes_per_token": NaN'))
+    with pytest.raises(ValueError, match="finite"):
+        load(path)
+    assert load(written(tmp_path, api))["model_api"]["bytes_per_token"] == 3
+
+
+def crowded(tmp_path, length, project="abcdefghijkl", environment="development"):
+    """Ten instances with eight existing log groups each; `length` is the size of every group name."""
+
+    def change(value):
+        value.update(project=project, environment=environment)
+        first = value["instances"][0]
+        value["instances"] = [
+            {
+                **first,
+                "id": f"i-{index:017x}",
+                "existing_log_groups": [{"name": f"/{index}/{n}/" + "a" * length} for n in range(8)],
+            }
+            for index in range(10)
+        ]
+
+    return written(tmp_path, change)
+
+
+def test_log_policy_estimate_never_undercounts_the_rendered_role_policy(tmp_path):
+    from infra.spec import IAM_INLINE_LIMIT
+
+    length = 1
+    while True:
+        try:
+            load(crowded(tmp_path, length + 1))
+        except ValueError:
+            break
+        length += 1
+    spec = {**load(crowded(tmp_path, length)), "reference_only": False}
+    logs_role = examples(spec)["owned-tools"]["Resources"]["LogsRole"]
+    size = len(json.dumps(logs_role["Properties"]["Policies"][0]["PolicyDocument"], separators=(",", ":")))
+    assert IAM_INLINE_LIMIT - 400 < size <= IAM_INLINE_LIMIT  # accepted, and close to the real limit
+    with pytest.raises(ValueError, match="log tool's IAM policy"):
+        load(crowded(tmp_path, length + 1))
 
 
 def test_same_and_split_region_ownership(spec):
@@ -495,6 +570,63 @@ def test_cloud_change_set_template_mismatch_cannot_execute(spec):
     with pytest.raises(VerificationError, match="template"):
         release.inspect_change_set(bundle, "tools", "candidate", lambda *args: client)
     client.execute_change_set.assert_not_called()
+
+
+def test_change_set_sends_the_compact_text_the_size_guard_measures(spec, tmp_path, monkeypatch):
+    template = examples(spec)["foundation-monitor"]
+    (tmp_path / "foundation-monitor.json").write_text(json.dumps(template, indent=2, sort_keys=True) + "\n")
+    cfn = MagicMock()
+    monkeypatch.setattr(durable_ops, "clients", lambda *args: cfn)
+    monkeypatch.setattr(durable_ops, "require_reviewed_source", lambda bundle: None)
+    monkeypatch.setattr(durable_ops, "assert_account", lambda *args: None)
+    monkeypatch.setattr(durable_ops, "assert_stack_absent", lambda *args: None)
+    bundle = {
+        "spec": spec,
+        "review_hash": "a" * 64,
+        "stages": {"foundation-monitor": {"stack": "s"}},
+        "config": {},
+    }
+    durable_ops.change_set(bundle, tmp_path, "foundation-monitor")
+    sent = cfn.create_change_set.call_args.kwargs["TemplateBody"]
+    assert sent == templates.template_body(template)
+    assert len(sent) < len(json.dumps(template, indent=2, sort_keys=True))
+    assert templates.template_hash(json.loads(sent)) == templates.template_hash(template)
+
+
+def test_change_set_inspection_accepts_a_response_shaped_like_aws(spec):
+    """DescribeChangeSet has no RoleARN; the stub is validated against the real service model."""
+    body = {"Resources": {}}
+    bundle = {
+        "spec": spec,
+        "stages": {
+            "tools": {
+                "stack": "candidate-tools",
+                "region": spec["bedrock_region"],
+                "template_hash": templates.template_hash(body),
+            }
+        },
+    }
+    client = botocore.session.get_session().create_client(
+        "cloudformation", region_name="us-east-1", aws_access_key_id="x", aws_secret_access_key="x"
+    )
+    ref = {"StackName": "candidate-tools", "ChangeSetName": "candidate"}
+    with Stubber(client) as stub:
+        stub.add_response(
+            "describe_change_set",
+            {
+                "ChangeSetId": "cs-1",
+                "StackId": "stack-1",
+                "Status": "CREATE_COMPLETE",
+                "ExecutionStatus": "AVAILABLE",
+                "Changes": [],
+                "Capabilities": ["CAPABILITY_IAM"],
+                "Tags": [],
+            },
+            ref,
+        )
+        stub.add_response("get_template", {"TemplateBody": json.dumps(body)}, ref)
+        result, digest = release.inspect_change_set(bundle, "tools", "candidate", lambda *args: client)
+    assert result["ChangeSetId"] == "cs-1" and len(digest) == 64
 
 
 def test_released_roles_are_retained_with_published_functions(spec):

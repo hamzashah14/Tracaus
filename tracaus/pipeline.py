@@ -447,6 +447,10 @@ def notify(event, context, kind):
                 f"Notification ID: {notification_id}\n"
                 f"{report_note}"
             )
+            if incident.get("suppressed_names"):  # alarms folded into this incident, so none goes unseen
+                text += "\nAlso alarmed during this incident: " + ", ".join(
+                    sorted(incident["suppressed_names"])
+                )
         try:
             response = sns.publish(
                 TopicArn=topic,

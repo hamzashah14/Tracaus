@@ -1,7 +1,7 @@
 import copy
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -490,6 +490,43 @@ def test_existing_stack_access_denial_not_absence(tmp_path):
     bundle = {"stages": {"routing": {"stack": "example", "region": "eu-central-1"}}, "spec": p["spec"]}
     with pytest.raises(ClientError):
         driver.inspect_stack(bundle, "routing")
+
+
+@pytest.mark.parametrize("role_matches", [True, False])
+@pytest.mark.parametrize("no_changes", [False, True])
+def test_finished_stack_must_have_been_deployed_by_the_planned_role(tmp_path, role_matches, no_changes):
+    p = configuration(tmp_path)
+    role = p["spec"]["deployment_role_arn"]
+    driver = object.__new__(automation.Driver)
+    cfn = Mock()
+    cfn.describe_change_set.return_value = {"Status": "FAILED"}  # CloudFormation: nothing to change
+    driver.clients = Mock(return_value=cfn)
+    driver.inspect_stack = Mock(
+        return_value={"StackStatus": "UPDATE_COMPLETE", "RoleARN": role if role_matches else role + "-other"}
+    )
+    # first check: the stack is already current; second (after a FAILED change set): it still is
+    driver.template_matches = Mock(side_effect=[False, True] if no_changes else [True])
+    driver.op = Mock()
+    bundle = {
+        "review_hash": "a" * 64,
+        "stages": {
+            "routing": {
+                "stack": "example",
+                "region": "eu-central-1",
+                "create_only": False,
+                "template_hash": "h",
+            }
+        },
+        "spec": p["spec"],
+    }
+    record = {}
+    if role_matches:
+        driver.stage(bundle, "routing", record, Mock())
+        assert record["status"] == "COMPLETE"
+    else:
+        with pytest.raises(VerificationError, match="planned CloudFormation execution role"):
+            driver.stage(bundle, "routing", record, Mock())
+        assert record["status"] == "INTENT"
 
 
 @pytest.mark.parametrize("status", ["CREATE_IN_PROGRESS", "ROLLBACK_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"])
@@ -1414,6 +1451,24 @@ def test_resume_after_confirmation_reruns_only_verification_and_finishes(tmp_pat
     assert not {"build", "upload", "canary", "change-set", "execute"} & set(driver.calls[before:])
     assert driver.canaries == 1 and driver.calls.count("build") == 1
     assert json.loads((directory / "ui-connection.json").read_text())["ui_role_arn"]
+
+
+def test_slow_email_click_after_routing_needs_no_second_paid_canary(tmp_path, monkeypatch):
+    planned, directory, driver = awaiting_routing_verification(tmp_path, monkeypatch)
+    primary_email(driver)["SubscriptionArn"] = "PendingConfirmation"
+    automation.deploy(planned, directory, driver, allow_model=True)
+    state = journal(directory)
+    state["canary"]["checked_at"] = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+    automation.private_json(directory / "state.json", state)
+    primary_email(driver)["SubscriptionArn"] = driver.subscriptions[1]["SubscriptionArn"] + ":confirmed"
+    # No --allow-model-invocation, and the receipt is long expired.
+    before = len(driver.calls)
+    result = automation.deploy(planned, directory, driver)
+    assert result["status"] == "INFRASTRUCTURE_READY_MANUAL_ACCEPTANCE_PENDING"
+    assert driver.canaries == 1 and not {"canary", "retirement-plan"} & set(driver.calls[before:])
+    # A finished journal stays finished when apply is run again.
+    again = automation.deploy(planned, directory, driver)
+    assert again["status"] == "INFRASTRUCTURE_READY_MANUAL_ACCEPTANCE_PENDING" and driver.canaries == 1
 
 
 def mismatch(kind, driver, spec):

@@ -12,7 +12,7 @@ def main():
     parser.add_argument("--instance-id", required=True)
     parser.add_argument("--file", type=Path, required=True)
     args = parser.parse_args()
-    if not re.fullmatch(r"i-[0-9a-f]{17}", args.instance_id):
+    if not re.fullmatch(r"i-(?:[0-9a-f]{8}|[0-9a-f]{17})", args.instance_id):
         raise ValueError("Declare a valid inventory instance")
     record = {
         "type": "tracaus.collector-heartbeat",

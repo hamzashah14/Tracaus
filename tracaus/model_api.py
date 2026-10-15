@@ -356,9 +356,10 @@ class ModelAPI:
         )
         raw, start = bytearray(), time.monotonic()
         try:
-            # The socket timeout bounds each wait; the loop bounds the whole response (slow drip).
+            # The socket timeout bounds each wait; the loop bounds the whole response (slow drip). read1 returns
+            # whatever has arrived: read(n) would wait for n bytes and only then let the check below run.
             with self._opener.open(request, timeout=TIMEOUT) as response:
-                while chunk := response.read(65536):
+                while chunk := response.read1(65536):
                     raw += chunk
                     if len(raw) > MAX_RESPONSE:
                         raise ModelAPIError("bad_response")

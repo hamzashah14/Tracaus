@@ -300,7 +300,11 @@ and alarm actions.
 - **Health.** Each service route is probed. The result is an `Availability` metric per service
   and route. A `TelemetryFresh` metric per service is true only when both the declared CWAgent
   metric (`collector_metric_id`) is fresh and a valid shipped heartbeat is within
-  `freshness_seconds`. Both are needed. Idle application logs never count as a heartbeat.
+  `freshness_seconds`. Both are needed. Idle application logs never count as a heartbeat. If the
+  observer cannot read the metric or the heartbeat log, it reports `TELEMETRY_READ_FAILED` and
+  writes no `TelemetryFresh` point for that run (the alarm treats the gap as breaching), so its own
+  failure is never recorded as a collector failure. A route answering with a large body is still
+  healthy: only the status code and the latency decide `Availability`.
 - **Delivery.** The canary sends a synthetic notification through the alert path. A separate
   consumer records its receipt. The observer checks the due times, whether the primary and
   fallback subscriptions are confirmed, and whether a person has attested a fresh inbox receipt

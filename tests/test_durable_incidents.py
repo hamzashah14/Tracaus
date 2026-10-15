@@ -42,6 +42,18 @@ def failure(code):
     return ClientError(response, "TransactWriteItems")
 
 
+def test_legacy_eight_digit_instance_ids_are_accepted():
+    legacy = "i-0abc1234"
+    alarm = {
+        **ALARM,
+        "AlarmName": f"tracaus-staging-{legacy}-status",
+        "AlarmArn": f"arn:aws:cloudwatch:{REGION}:{ACCOUNT}:alarm:tracaus-staging-{legacy}-status",
+        "Trigger": {"Dimensions": [{"name": "InstanceId", "value": legacy}]},
+    }
+    event = normalize_sns(envelope(alarm), TOPIC, ACCOUNT, REGION, {legacy}, "tracaus-staging-")
+    assert event["instance_id"] == legacy
+
+
 def test_native_transition_identity_and_recovery_are_distinct():
     alarm = normalize(envelope())
     duplicate = normalize(envelope())
@@ -408,6 +420,7 @@ def test_durable_templates_keep_capture_ahead_of_cutover_and_scope_roles():
         StreamArn="arn:aws:dynamodb:eu-central-1:123456789012:table/test/stream/1",
         StreamDeadArn="arn:aws:sqs:eu-central-1:123456789012:stream-dead",
         DeliveryDeadArn="arn:aws:sqs:eu-central-1:123456789012:delivery-dead",
+        AuditLogGroup="/tracaus/staging/audit",
         TableArn="arn:aws:dynamodb:eu-central-1:123456789012:table/test",
         EvidenceBucket="example-reports",
         EvidenceKeyArn="arn:aws:kms:eu-central-1:123456789012:key/example",
@@ -799,3 +812,137 @@ def test_superseded_queue_intent_cannot_start_another_model_attempt(monkeypatch)
     assert result == {"batchItemFailures": []}
     store.claim.assert_not_called()
     model.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "folded,line", [(None, False), ({"tracaus-staging-i-1-disk", "ECS task stop"}, True)]
+)
+def test_report_email_names_alarms_folded_into_the_incident(monkeypatch, folded, line):
+    for key, value in {
+        "REPORTS_TOPIC_ARN": "reports",
+        "STATUS_BASE_URL": "https://customer.example/",
+    }.items():
+        monkeypatch.setenv(key, value)
+    store, sns, iid = MagicMock(), MagicMock(), "a" * 32
+    incident = {"instance_id": IID, "status": "COMPLETE", "report_version": "v1"}
+    if folded:
+        incident["suppressed_names"] = folded
+    store.get.side_effect = lambda pk, sk="META": (
+        {"status": "PENDING", "attempts": 0} if sk.startswith("NOTIFICATION") else incident
+    )
+    store.claim_notification.return_value = {"fencing_token": 1, "attempts": 1}
+    sns.publish.return_value = {"MessageId": "accepted"}
+    event = {"Records": [{"messageId": "one", "body": f"INCIDENT#{iid}|INTENT#REPORT#1"}]}
+    with (
+        patch.object(pipeline, "ledger", return_value=store),
+        patch.object(pipeline, "clients", return_value=sns),
+    ):
+        assert pipeline.report(event) == {"batchItemFailures": []}
+    message = sns.publish.call_args.kwargs["Message"]
+    assert ("Also alarmed during this incident: ECS task stop, tracaus-staging-i-1-disk" in message) is line
+
+
+TABLE_PREFIXES = {  # what each function reads and writes: a partition-key family per line of ledger.py's use
+    "IngressRole": {"INCIDENT", "EVENT", "ALARM", "COOLDOWN"},
+    "DispatchRole": {"INCIDENT"},
+    "InvestigateRole": {"INCIDENT", "EVENT", "BUDGET"},
+    "InitialRole": {"INCIDENT"},
+    "ReportRole": {"INCIDENT"},
+    "ReconcileRole": {"INCIDENT", "SWEEP"},
+}
+
+
+@pytest.mark.parametrize("role,prefixes", TABLE_PREFIXES.items())
+def test_each_function_reaches_only_its_own_partition_keys(role, prefixes):
+    from infra.spec import ROOT, load
+    from scripts.dev.validate_durable import examples
+
+    spec = load(ROOT / "examples/deployment.example.json")
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    runtime = examples(spec, config)["durable-runtime"]["Resources"][role]
+    statements = runtime["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+
+    def actions(statement):
+        return [statement["Action"]] if isinstance(statement["Action"], str) else statement["Action"]
+
+    items = [s for s in statements if {"dynamodb:GetItem", "dynamodb:Query"} & set(actions(s))]
+    table = [s for s in items if not s["Resource"].endswith("/index/*")]
+    indexes = [s for s in items if s["Resource"].endswith("/index/*")]
+    assert len(table) == 1
+    condition = table[0]["Condition"]
+    assert sorted(condition["ForAllValues:StringLike"]["dynamodb:LeadingKeys"]) == sorted(
+        p + "#*" for p in prefixes
+    )
+    assert condition["Null"] == {
+        "dynamodb:LeadingKeys": "false"
+    }  # ForAllValues is true when the key is absent
+    assert ("dynamodb:ConditionCheckItem" in actions(table[0])) is (role == "IngressRole")
+    assert bool(indexes) is (role == "ReconcileRole")
+
+
+def test_audit_log_group_is_created_and_only_the_ui_role_may_write_it():
+    from infra.spec import ROOT, load
+    from infra.stacks import durable_templates
+    from scripts.dev.validate_durable import examples
+
+    spec = load(ROOT / "examples/deployment.example.json")
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    stages = examples(spec, config)
+    group = stages["durable-foundation"]["Resources"]["AuditLogGroup"]["Properties"]
+    assert group["LogGroupName"] == durable_templates.audit_log_group(spec) == "/tracaus/staging/audit"
+    assert group["RetentionInDays"] == spec["log_retention_days"]
+    assert stages["durable-foundation"]["Outputs"]["AuditLogGroup"] == {"Value": {"Ref": "AuditLogGroup"}}
+    writers = []
+    for stage in stages.values():
+        for logical, resource in stage["Resources"].items():
+            if resource["Type"] != "AWS::IAM::Role":
+                continue
+            for policy in resource["Properties"].get("Policies", []):
+                for statement in policy["PolicyDocument"]["Statement"]:
+                    resources = (
+                        statement["Resource"]
+                        if isinstance(statement["Resource"], list)
+                        else [statement["Resource"]]
+                    )
+                    if any(isinstance(r, str) and "log-group:/tracaus/staging/audit" in r for r in resources):
+                        writers.append((logical, sorted(statement["Action"])))
+    assert writers == [("UiRole", ["logs:CreateLogStream", "logs:PutLogEvents"])]
+
+
+def spec_with_targets(count):
+    from infra.spec import ROOT
+
+    value = json.loads((ROOT / "examples/deployment.example.json").read_text())
+    first = value["instances"][0]
+    value["instances"] = [{**first, "id": f"i-{n:017x}"} for n in range(count)]
+    return value
+
+
+@pytest.mark.parametrize("count,expected", [(1, 2), (2, 2), (5, 5), (10, 10)])
+def test_investigations_run_as_many_at_once_as_there_are_targets(tmp_path, count, expected):
+    from infra.spec import ROOT, investigation_concurrency, load
+    from scripts.dev.validate_durable import examples
+
+    path = tmp_path / "deployment.json"
+    path.write_text(json.dumps(spec_with_targets(count)))
+    spec = load(path)
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    assert investigation_concurrency(spec) == expected
+    work = examples(spec, config)["routing"]["Resources"]["WorkMapping"]["Properties"]
+    assert work["ScalingConfig"] == {"MaximumConcurrency": expected}
+
+
+def test_a_backlog_alarm_exists_unless_the_observers_already_watch_the_queue():
+    from infra.spec import ROOT, load
+    from scripts.dev import validate_observations
+    from scripts.dev.validate_durable import examples
+
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    plain = examples(load(ROOT / "examples/deployment.example.json"), config)["durable-foundation"]
+    alarm = plain["Resources"]["WorkAgeAlarm"]["Properties"]
+    assert alarm["MetricName"] == "ApproximateAgeOfOldestMessage" and alarm["Threshold"] == 300
+    assert alarm["Dimensions"] == [{"Name": "QueueName", "Value": "tracaus-staging-work-queue"}]
+    assert alarm["AlarmActions"] == [{"Ref": "FallbackTopic"}]
+    observed = validate_observations.fixtures(load(ROOT / "examples/observability.example.json"), config)
+    assert "WorkAgeAlarm" not in observed["durable-foundation"]["Resources"]
+    assert "WorkAge" in observed["observations"]["Resources"]

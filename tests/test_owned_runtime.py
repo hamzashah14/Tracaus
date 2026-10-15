@@ -1,10 +1,13 @@
 import copy
 import json
+from datetime import datetime, timezone
 from unittest.mock import Mock
 
+import botocore.session
 import pytest
+from botocore.stub import Stubber
 
-from infra.deploy import durable_ops
+from infra.deploy import durable, durable_ops, owned_ops
 from infra.deploy.verify import VerificationError
 from infra.spec import ROOT, load
 from infra.stacks import owned_runtime
@@ -282,3 +285,83 @@ def test_bedrock_ignores_model_secret_binding_and_never_needs_it():
     env = owned_runtime.environment(SPEC, BASE, data)
     assert "MODEL_API" not in env
     assert MODEL_SECRET["arn"] not in json.dumps(owned_runtime.model_permissions(SPEC, data))
+
+
+def test_agentcore_runtime_comparison_accepts_the_shape_aws_returns():
+    """GetAgentRuntime returns protocolConfiguration as a structure; the stub is validated against botocore."""
+    data = bindings(target="agentcore")
+    stages = examples(SPEC, {**BASE, "runtime_target": "agentcore"})
+    expected = stages["agentcore-runtime"]["Resources"]["Runtime"]["Properties"]
+    pinned = expected["AgentRuntimeArtifact"]["CodeConfiguration"]["Code"]["S3"]
+    remote = data["agentcore"]
+    artifact = {"bucket": pinned["Bucket"], "key": pinned["Prefix"], "version_id": pinned["VersionId"]}
+    client = botocore.session.get_session().create_client(
+        "bedrock-agentcore-control", region_name="us-east-1", aws_access_key_id="x", aws_secret_access_key="x"
+    )
+    response = {
+        "agentRuntimeArn": remote["RuntimeArn"],
+        "agentRuntimeName": "tracaus_test",
+        "agentRuntimeId": remote["RuntimeArn"].split("/")[-1],
+        "agentRuntimeVersion": remote["RuntimeVersion"],
+        "createdAt": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "lastUpdatedAt": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "roleArn": "arn:aws:iam::123456789012:role/r",
+        "status": "READY",
+        "agentRuntimeArtifact": {
+            "codeConfiguration": {
+                "code": {
+                    "s3": {
+                        "bucket": artifact["bucket"],
+                        "prefix": artifact["key"],
+                        "versionId": artifact["version_id"],
+                    }
+                },
+                "runtime": "PYTHON_3_12",
+                "entryPoint": ["tracaus_agentcore.py"],
+            }
+        },
+        "environmentVariables": expected["EnvironmentVariables"],
+        "networkConfiguration": {"networkMode": "PUBLIC"},
+        "protocolConfiguration": {"serverProtocol": "HTTP"},
+        "lifecycleConfiguration": {"idleRuntimeSessionTimeout": 60, "maxLifetime": 600},
+    }
+    with Stubber(client) as stub:
+        stub.add_response("get_agent_runtime", response)
+        actual = client.get_agent_runtime(agentRuntimeId="x")
+    assert not owned_ops.runtime_drifted(actual, remote, expected, artifact)
+    drifted = {**actual, "protocolConfiguration": {"serverProtocol": "MCP"}}
+    assert owned_ops.runtime_drifted(drifted, remote, expected, artifact)
+
+
+@pytest.mark.parametrize("target,fits", [("standalone", True), ("agentcore", False)])
+def test_agentcore_name_limit_is_checked_when_the_plan_is_made(tmp_path, target, fits):
+    long_names = {**SPEC, "project": "abcdefghijkl", "environment": "development", "release_id": "a" * 16}
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps({**BASE, "runtime_target": target}))
+    if fits:
+        assert durable.load_config(path, long_names)["runtime_target"] == target
+    else:
+        with pytest.raises(ValueError, match="48 characters"):
+            durable.load_config(path, long_names)
+    assert durable.load_config(path, SPEC)["runtime_target"] == target
+
+
+def test_agentcore_role_log_groups_name_the_runtime_not_a_python_object():
+    stages = examples(SPEC, {**BASE, "runtime_target": "agentcore"})
+    role = stages["agentcore-runtime"]["Resources"]["ExecutionRole"]["Properties"]
+    statements = role["Policies"][0]["PolicyDocument"]["Statement"]
+    arns = [
+        arn
+        for st in statements
+        for arn in (st["Resource"] if isinstance(st["Resource"], list) else [st["Resource"]])
+    ]
+    groups = [a for a in arns if isinstance(a, str) and ":log-group:/aws/bedrock-agentcore/runtimes/" in a]
+    assert groups and all(f"/runtimes/{owned_runtime.runtime_name(SPEC)}*" in a for a in groups)
+    assert not any("<" in a for a in arns if isinstance(a, str))
+
+
+@pytest.mark.parametrize("target", ["standalone", "agentcore"])
+def test_no_rendered_template_contains_a_python_repr(target):
+    for stage, template in examples(SPEC, {**BASE, "runtime_target": target}).items():
+        text = json.dumps(template)
+        assert "<function" not in text and " object at 0x" not in text, stage

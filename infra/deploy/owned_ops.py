@@ -105,19 +105,8 @@ def verify_candidate(bundle, factory):
     }
 
 
-def verify_remote(bundle, factory):
-    spec, bindings = bundle["spec"], bundle["bindings"]
-    remote = bindings["agentcore"]
-    planned = sealed(bundle, "agentcore-runtime", factory)
-    sealed(bundle, "agentcore-endpoint", factory)
-    verify_agentcore_logs(spec, remote, factory)
-    control = factory("bedrock-agentcore-control", spec["bedrock_region"])
-    runtime_id = remote["RuntimeArn"].split("/")[-1]
-    actual = control.get_agent_runtime(
-        agentRuntimeId=runtime_id, agentRuntimeVersion=remote["RuntimeVersion"]
-    )
-    expected = planned["Resources"]["Runtime"]["Properties"]
-    artifact = bindings["host_artifact"]
+def runtime_drifted(actual, remote, expected, artifact):
+    """Compare GetAgentRuntime (camelCase, protocolConfiguration is a structure) with the planned runtime."""
     wanted_artifact = {
         "codeConfiguration": {
             "code": {
@@ -131,17 +120,33 @@ def verify_remote(bundle, factory):
             "entryPoint": ["tracaus_agentcore.py"],
         }
     }
-    if (
+    return bool(
         actual.get("status") != "READY"
         or actual.get("agentRuntimeArn") != remote["RuntimeArn"]
         or actual.get("agentRuntimeVersion") != remote["RuntimeVersion"]
         or actual.get("agentRuntimeArtifact") != wanted_artifact
         or actual.get("environmentVariables") != expected["EnvironmentVariables"]
         or actual.get("networkConfiguration") != {"networkMode": "PUBLIC"}
-        or actual.get("protocolConfiguration") != "HTTP"
+        or actual.get("protocolConfiguration") != {"serverProtocol": "HTTP"}
         or actual.get("lifecycleConfiguration") != {"idleRuntimeSessionTimeout": 60, "maxLifetime": 600}
         or actual.get("authorizerConfiguration")
-    ):
+    )
+
+
+def verify_remote(bundle, factory):
+    spec, bindings = bundle["spec"], bundle["bindings"]
+    remote = bindings["agentcore"]
+    planned = sealed(bundle, "agentcore-runtime", factory)
+    sealed(bundle, "agentcore-endpoint", factory)
+    verify_agentcore_logs(spec, remote, factory)
+    control = factory("bedrock-agentcore-control", spec["bedrock_region"])
+    runtime_id = remote["RuntimeArn"].split("/")[-1]
+    actual = control.get_agent_runtime(
+        agentRuntimeId=runtime_id, agentRuntimeVersion=remote["RuntimeVersion"]
+    )
+    expected = planned["Resources"]["Runtime"]["Properties"]
+    artifact = bindings["host_artifact"]
+    if runtime_drifted(actual, remote, expected, artifact):
         raise VerificationError("AgentCore runtime artifact/configuration/authentication drifted")
     endpoint = control.get_agent_runtime_endpoint(
         agentRuntimeId=runtime_id, endpointName=remote["EndpointName"]

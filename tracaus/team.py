@@ -1,8 +1,9 @@
 """Team mode: a small allowlist file says who may use which instances.
 
-Standard library only. `tracaus/*.py` ships in every Lambda package and is imported with
-`python -S`, so this module must not import streamlit or boto3. Streamlit's OIDC login
-authenticates the person; this module only authorizes the verified claims.
+Standard library only at import time. `tracaus/*.py` ships in every Lambda package and is imported with
+`python -S`, so this module must not import streamlit or boto3 on import; the audit shipper imports boto3 only
+when the UI process writes a line. Streamlit's OIDC login authenticates the person; this module only
+authorizes the verified claims.
 """
 
 import json
@@ -12,6 +13,7 @@ import stat
 import threading
 import time
 import tomllib
+import uuid
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -188,8 +190,56 @@ def admit(sub, limit, now=None):
         return True
 
 
+_SHIP = {"client": None, "stream": None, "failed": False}
+_SHIP_LOCK = threading.Lock()
+
+
+def ship(text):
+    """Write one audit line to the CloudWatch Logs group named by AUDIT_LOG_GROUP. True when it was written."""
+    group = os.getenv("AUDIT_LOG_GROUP")
+    if not group:
+        return False
+    try:
+        with _SHIP_LOCK:
+            if _SHIP["client"] is None:
+                import boto3
+                from botocore.config import Config
+
+                client = boto3.client(
+                    "logs",
+                    region_name=os.environ["MONITOR_REGION"],
+                    config=Config(
+                        connect_timeout=3,
+                        read_timeout=5,
+                        retries={"mode": "standard", "total_max_attempts": 2},
+                    ),
+                )
+                stream = (
+                    f"{time.strftime('%Y-%m-%d', time.gmtime())}-{uuid.uuid4().hex[:12]}"  # one per process
+                )
+                try:
+                    client.create_log_stream(logGroupName=group, logStreamName=stream)
+                except client.exceptions.ResourceAlreadyExistsException:
+                    pass
+                _SHIP.update(client=client, stream=stream)
+        _SHIP["client"].put_log_events(
+            logGroupName=group,
+            logStreamName=_SHIP["stream"],
+            logEvents=[{"timestamp": int(time.time() * 1000), "message": text}],
+        )
+        return True
+    except Exception:
+        return False  # the line is still on standard output; the UI tells the operator
+
+
+def audit_failed():
+    """True when the last audit line did not reach CloudWatch Logs (or no group is configured)."""
+    return _SHIP["failed"]
+
+
 def audit(sub, role, instance, action, outcome, *, instance_count=None, tokens=None):
-    """One JSON line on standard output. Callers pass fixed vocabulary only, never prompt or log text."""
+    """One JSON line on standard output and in CloudWatch Logs. Callers pass fixed vocabulary only, never prompt
+    or log text."""
     line = {
         "ts": int(time.time()),
         "event": "tracaus.audit",
@@ -205,4 +255,6 @@ def audit(sub, role, instance, action, outcome, *, instance_count=None, tokens=N
         filtered = {k: v for k, v in tokens.items() if k in ("input", "output") and type(v) is int}
         if filtered:
             line["tokens"] = filtered
-    print(json.dumps(line, separators=(",", ":")), flush=True)
+    text = json.dumps(line, separators=(",", ":"))
+    print(text, flush=True)
+    _SHIP["failed"] = not ship(text)

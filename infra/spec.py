@@ -8,6 +8,8 @@ from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_TARGETS = 10  # EC2 instances and ECS services together
+IAM_INLINE_LIMIT = 10240  # characters across a role's inline policies
+LOGS_POLICY_FIXED = 1000  # characters of the log tool's policy besides its group ARNs; measured at about 700
 MAX_ECS_INGRESS_BYTES = (
     2500  # of the 4 KiB a Lambda environment may render to, beside the ingestion's own settings
 )
@@ -97,13 +99,33 @@ def ecs_targets(spec):
     }
 
 
+def _finite(token):
+    raise ValueError("Invalid deployment field: not a finite number")
+
+
+def _no_line_breaks(value, path=()):
+    """Schema patterns end in `$`, which Python also matches before a trailing newline."""
+    where = ".".join(map(str, path)) or "root"
+    if isinstance(value, str) and ("\n" in value or "\r" in value):
+        raise ValueError(f"Invalid deployment field: {where}")
+    if isinstance(value, dict):
+        if any("\n" in key or "\r" in key for key in value):
+            raise ValueError(f"Invalid deployment field: {where}")
+        for key, item in value.items():
+            _no_line_breaks(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _no_line_breaks(item, path + (index,))
+
+
 def load(path):
-    value = json.loads(Path(path).read_text())
+    value = json.loads(Path(path).read_text(), parse_constant=_finite)
     schema = json.loads((ROOT / "infra/deployment.schema.json").read_text())
     errors = sorted(Draft202012Validator(schema).iter_errors(value), key=lambda e: str(e.path))
     if errors:
         # No submitted values (which may contain secrets) in diagnostics.
         raise ValueError(f"Invalid deployment field: {'.'.join(map(str, errors[0].path)) or 'root'}")
+    _no_line_breaks(value)
     ids = [item["id"] for item in value["instances"]]
     everything = targets(value)
     if len(set(everything)) != len(everything):
@@ -195,7 +217,34 @@ def load(path):
         pairs = [(entry["group"], entry["file"]) for entry in item.get("log_files", [])]
         if len(set(pairs)) != len(pairs) or any(g not in known or ".." in f.split("/") for g, f in pairs):
             raise ValueError("Invalid log_files: unique files, each for one of the instance's own log groups")
+    # One ARN per readable group goes into the log tool's role policy, which IAM caps at 10,240 characters.
+    arn_size = sum(len(log_group_arn(value, group)) + 3 for group in readable_log_groups(value))
+    if arn_size + LOGS_POLICY_FIXED > IAM_INLINE_LIMIT:
+        raise ValueError(
+            "Too many or too long log group names: the log tool's IAM policy would exceed "
+            f"{IAM_INLINE_LIMIT} characters ({arn_size + LOGS_POLICY_FIXED}). List fewer log groups."
+        )
     return value
+
+
+def investigation_concurrency(spec):
+    """Investigations that may run at once: one per target, so a fleet-wide event is not queued past its deadline.
+    SQS event source mappings need at least 2 (a Lambda account may need its limit raised above 10)."""
+    return max(2, len(targets(spec)))
+
+
+def daily_token_budget(spec):
+    from tracaus.runtime import DAILY_TOKEN_BUDGET
+
+    return spec.get("daily_token_budget", DAILY_TOKEN_BUDGET)
+
+
+def boundary_arn(spec):
+    """The permissions boundary every role the release stacks create must carry (see infra.stacks.bootstrap_iam)."""
+    return (
+        f"arn:aws:iam::{spec['account_id']}:policy/{spec['project']}/{spec['environment']}/"
+        f"{prefix(spec)}-runtime-boundary"
+    )
 
 
 def prefix(spec):
@@ -487,6 +536,10 @@ def existing_log_groups(spec):
         }
     )
     return found
+
+
+def log_group_arn(spec, group):
+    return f"arn:aws:logs:{spec['monitor_region']}:{spec['account_id']}:log-group:{group}:*"
 
 
 def readable_log_groups(spec):

@@ -344,6 +344,7 @@ appear after a test request. The coverage check inside the canary enforces all o
 | `model_api` | Model API | `protocol` (`openai` or `anthropic`), `base_url`, optional `bytes_per_token` (`openai` only, 1 to 8). Forbidden with Bedrock | Your provider (section 8) |
 | `executor_mode`, `maintenance_mode`, `reserved_concurrency` | yes | `qualified`. `false`. `null` (or 0 to 1000, where 0 needs `maintenance_mode`) | Keep as generated |
 | `notification_email` or `notification_emails` | one of the two | One address, or a list of 1 to 5 distinct addresses. Not both | Mailboxes you own |
+| `daily_token_budget` | no | Whole number, 1 to 1000000000. Default 2000000 | Your cost limit for incident investigations per UTC day |
 | `log_retention_days` | yes | 7, 14, 30, 60, 90, 180 or 365 | Your retention decision |
 | `ui_principal_arn`, `ci_principal_arn`, `deployment_role_arn` | yes | Role ARNs in `account_id`, all different | `aws iam get-role --role-name NAME`: copy `Arn`, path included |
 | `instances` | yes | 0 to 10 unique objects with the six fields below (`[]` for an ECS-only deployment; at most 10 targets with `ecs_services`) | EC2 console |

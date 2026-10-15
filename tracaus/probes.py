@@ -30,19 +30,32 @@ def check(route, *, resolve=socket.getaddrinfo, connection=PinnedHTTPS, clock=ti
         addresses = {entry[4][0] for entry in resolve(parsed.hostname, 443, type=socket.SOCK_STREAM)}
         if not addresses or any(not ipaddress.ip_address(value).is_global for value in addresses):
             return {"healthy": False, "code": "DESTINATION_DENIED", "latency_ms": 0}
-        left = route["timeout_seconds"] - (clock() - start)
-        if left <= 0:
-            return {"healthy": False, "code": "TIMEOUT", "latency_ms": 0}
-        conn = connection(parsed.hostname, sorted(addresses)[0], left)
-        conn.request("GET", parsed.path, headers={"User-Agent": "Tracaus-Readiness/1", "Connection": "close"})
-        response = conn.getresponse()
-        # Only a small body is read to detect a hung response. No body is stored/logged.
-        data = response.read(4097)
-        latency = max(0, int((clock() - start) * 1000))
-        healthy = (
-            response.status in route["statuses"] and latency <= route["latency_ms"] and len(data) <= 4096
+        # IPv4 first: a Lambda function has no IPv6 route out. The next address is tried only after a connection
+        # error, so a server that answers badly is judged on its answer.
+        ordered = sorted(
+            addresses, key=lambda value: (ipaddress.ip_address(value).version, ipaddress.ip_address(value))
         )
-        code = "OK" if healthy else "STATUS_OR_LATENCY_OR_SIZE"
+        for address in ordered:
+            left = route["timeout_seconds"] - (clock() - start)
+            if left <= 0:
+                return {"healthy": False, "code": "TIMEOUT", "latency_ms": 0}
+            conn = connection(parsed.hostname, address, left)
+            try:
+                conn.request(
+                    "GET", parsed.path, headers={"User-Agent": "Tracaus-Readiness/1", "Connection": "close"}
+                )
+                response = conn.getresponse()
+                # A little of the body is read so a hung response shows as a timeout. It is not stored or judged.
+                response.read(4096)
+                break
+            except OSError:
+                conn.close()
+                conn = None
+        else:
+            raise OSError("No address answered")
+        latency = max(0, int((clock() - start) * 1000))
+        healthy = response.status in route["statuses"] and latency <= route["latency_ms"]
+        code = "OK" if healthy else "STATUS_OR_LATENCY"
         return {"healthy": healthy, "code": code, "latency_ms": latency}
     except Exception:
         return {

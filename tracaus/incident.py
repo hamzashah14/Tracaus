@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 from tracaus.time import iso_utc, parse_utc
 
 MAX_SOURCE_BYTES = 128 * 1024
-INSTANCE = re.compile(r"i-[0-9a-f]{17}\Z")
 TARGET = (
-    r"i-[0-9a-f]{17}|ecs-[a-z0-9_]{1,24}"  # an EC2 instance, or an ECS service labelled in deployment.json
+    # an EC2 instance (8 hex digits only on instances launched before 2016), or an ECS service
+    # labelled in deployment.json
+    r"i-(?:[0-9a-f]{8}|[0-9a-f]{17})|ecs-[a-z0-9_]{1,24}"
 )
 ECS_STATES = {
     "PROVISIONING",
