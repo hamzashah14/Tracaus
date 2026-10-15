@@ -239,6 +239,14 @@ def daily_token_budget(spec):
     return spec.get("daily_token_budget", DAILY_TOKEN_BUDGET)
 
 
+def boundary_arn(spec):
+    """The permissions boundary every role the release stacks create must carry (see infra.stacks.bootstrap_iam)."""
+    return (
+        f"arn:aws:iam::{spec['account_id']}:policy/{spec['project']}/{spec['environment']}/"
+        f"{prefix(spec)}-runtime-boundary"
+    )
+
+
 def prefix(spec):
     return f"{spec['project']}-{spec['environment']}"
 

@@ -7,10 +7,13 @@ roles can only touch resources whose names start with it. The resource strings m
 permission screen in `infra.deploy.deployment_preflight`, so `check` can confirm the result.
 """
 
-from infra.spec import ecs_services, prefix
+from infra.spec import boundary_arn, ecs_services, log_prefix, prefix, tags
 from infra.stacks.templates import ref
 
 CLOUDFORMATION = "cloudformation.amazonaws.com"
+AGENTCORE_GROUPS = (
+    "arn:aws:logs:{region}:{account}:log-group:/aws/bedrock-agentcore/runtimes/{project}_{environment}_*"
+)
 AGENTCORE = "bedrock-agentcore.amazonaws.com"
 
 
@@ -34,9 +37,21 @@ def regions(spec):
 def scoped(spec, template):
     """One resource string per region, e.g. template = 'arn:aws:sns:{region}:{account}:{prefix}-*'."""
     return [
-        template.format(region=region, account=spec["account_id"], prefix=prefix(spec))
+        template.format(
+            region=region,
+            account=spec["account_id"],
+            prefix=prefix(spec),
+            project=spec["project"],
+            environment=spec["environment"],
+            log_prefix=log_prefix(spec),
+        )
         for region in regions(spec)
     ]
+
+
+def own_tags(spec, kind):
+    """Tag conditions that name this deployment's own resources: kind is 'aws:RequestTag' or 'aws:ResourceTag'."""
+    return {f"{kind}/{key}": value for key, value in tags(spec).items()}
 
 
 def operator_policy(spec):
@@ -125,6 +140,7 @@ def operator_policy(spec):
 def execution_policy(spec, agentcore):
     account = spec["account_id"]
     role_scope = f"arn:aws:iam::{account}:role/{spec['project']}/{spec['environment']}/*"
+    functions = scoped(spec, "arn:aws:lambda:{region}:{account}:function:{prefix}-*")
     statements = [
         allow(
             ["s3:*"],
@@ -134,16 +150,16 @@ def execution_policy(spec, agentcore):
         allow(["sns:*"], scoped(spec, "arn:aws:sns:{region}:{account}:{prefix}-*")),
         allow(["sqs:*"], scoped(spec, "arn:aws:sqs:{region}:{account}:{prefix}-*")),
         allow(["dynamodb:*"], scoped(spec, "arn:aws:dynamodb:{region}:{account}:table/{prefix}-*")),
-        allow(["lambda:*"], scoped(spec, "arn:aws:lambda:{region}:{account}:function:{prefix}-*")),
+        allow(["lambda:*"], functions),
         allow(["events:*"], scoped(spec, "arn:aws:events:{region}:{account}:rule/{prefix}-*")),
         allow(
             ["secretsmanager:*"], scoped(spec, "arn:aws:secretsmanager:{region}:{account}:secret:{prefix}/*")
         ),
+        # Only the log groups the stacks create: the functions', the AgentCore runtimes' and Tracaus's own.
         allow(
             [
                 "logs:CreateLogGroup",
                 "logs:DeleteLogGroup",
-                "logs:DescribeLogGroups",
                 "logs:PutRetentionPolicy",
                 "logs:DeleteRetentionPolicy",
                 "logs:PutMetricFilter",
@@ -152,17 +168,29 @@ def execution_policy(spec, agentcore):
                 "logs:UntagResource",
                 "logs:ListTagsForResource",
             ],
-            scoped(spec, "arn:aws:logs:{region}:{account}:log-group:*"),
+            scoped(spec, "arn:aws:logs:{region}:{account}:log-group:/aws/lambda/{prefix}-*")
+            + (scoped(spec, AGENTCORE_GROUPS) if agentcore else [])
+            + scoped(spec, "arn:aws:logs:{region}:{account}:log-group:{log_prefix}/*"),
         ),
+        allow(["logs:DescribeLogGroups"], scoped(spec, "arn:aws:logs:{region}:{account}:log-group:*")),
+        # Roles are created, changed and deleted only with the permissions boundary attached, so what a template
+        # makes of them can never exceed that boundary. Attaching managed policies and changing the boundary
+        # itself are not granted at all.
         allow(
             [
                 "iam:CreateRole",
-                "iam:DeleteRole",
-                "iam:GetRole",
-                "iam:UpdateRole",
-                "iam:UpdateAssumeRolePolicy",
                 "iam:PutRolePolicy",
+                "iam:UpdateAssumeRolePolicy",
                 "iam:DeleteRolePolicy",
+                "iam:DeleteRole",
+                "iam:UpdateRole",
+            ],
+            [role_scope],
+            {"StringEquals": {"iam:PermissionsBoundary": boundary_arn(spec)}},
+        ),
+        allow(
+            [
+                "iam:GetRole",
                 "iam:GetRolePolicy",
                 "iam:ListRolePolicies",
                 "iam:ListAttachedRolePolicies",
@@ -176,35 +204,64 @@ def execution_policy(spec, agentcore):
             [role_scope],
             {"StringEquals": {"iam:PassedToService": "lambda.amazonaws.com"}},
         ),
-        # These APIs accept no resource-level scope, so they cannot be limited by name.
+        # Event source mappings have no name to scope by; the function they feed is the scope.
+        allow(
+            ["lambda:CreateEventSourceMapping"],
+            ["*"],
+            {"StringLike": {"lambda:FunctionArn": functions}},
+        ),
         allow(
             [
-                "lambda:CreateEventSourceMapping",
                 "lambda:UpdateEventSourceMapping",
                 "lambda:DeleteEventSourceMapping",
                 "lambda:GetEventSourceMapping",
+            ],
+            scoped(spec, "arn:aws:lambda:{region}:{account}:event-source-mapping:*"),
+            {"StringLike": {"lambda:FunctionArn": functions}},
+        ),
+        allow(
+            [
+                "cloudwatch:PutMetricAlarm",
+                "cloudwatch:DeleteAlarms",
+                "cloudwatch:TagResource",
+                "cloudwatch:UntagResource",
+            ],
+            scoped(spec, "arn:aws:cloudwatch:{region}:{account}:alarm:{prefix}-*"),
+        ),
+        allow(
+            [
+                "cloudwatch:PutDashboard",
+                "cloudwatch:DeleteDashboards",
+                "cloudwatch:TagResource",
+                "cloudwatch:UntagResource",
+            ],
+            [f"arn:aws:cloudwatch::{account}:dashboard/{prefix(spec)}-*"],
+        ),
+        # A KMS key is created with this deployment's tags. Its policy is set when it is created and a key is
+        # retained, never deleted by a stack, so no policy change or deletion is granted. TagResource at creation
+        # cannot be told from tagging an existing key; it adds tags only.
+        allow(
+            ["kms:CreateKey", "kms:TagResource"],
+            ["*"],
+            {"StringEquals": own_tags(spec, "aws:RequestTag")},
+        ),
+        allow(
+            ["kms:TagResource", "kms:UntagResource"],
+            scoped(spec, "arn:aws:kms:{region}:{account}:key/*"),
+            {"StringEquals": own_tags(spec, "aws:ResourceTag")},
+        ),
+        allow(
+            ["kms:EnableKeyRotation", "kms:DescribeKey", "kms:GetKeyPolicy", "kms:GetKeyRotationStatus"],
+            scoped(spec, "arn:aws:kms:{region}:{account}:key/*"),
+        ),
+        # These APIs accept no resource-level scope: reads, or a call that names nothing yet.
+        allow(
+            [
                 "lambda:ListEventSourceMappings",
                 "lambda:GetAccountSettings",
                 "secretsmanager:GetRandomPassword",
-                "cloudwatch:PutMetricAlarm",
-                "cloudwatch:DeleteAlarms",
                 "cloudwatch:DescribeAlarms",
-                "cloudwatch:PutDashboard",
-                "cloudwatch:DeleteDashboards",
                 "cloudwatch:GetDashboard",
-                "cloudwatch:TagResource",
-                "cloudwatch:UntagResource",
-                "kms:CreateKey",
-                "kms:CreateAlias",
-                "kms:DeleteAlias",
-                "kms:PutKeyPolicy",
-                "kms:EnableKeyRotation",
-                "kms:DescribeKey",
-                "kms:GetKeyPolicy",
-                "kms:GetKeyRotationStatus",
-                "kms:ScheduleKeyDeletion",
-                "kms:TagResource",
-                "kms:UntagResource",
             ],
             ["*"],
         ),
@@ -251,6 +308,109 @@ def instance_policy(spec):
             ],
         }
     ]
+
+
+def boundary_policy(spec, agentcore):
+    """The most any role a release stack creates may do: what the Tracaus functions need, on this deployment's
+    own resources. A role gets the smaller of this and its own policy, so a template that gives a role more
+    (an administrator policy, say) gains nothing. tests/test_bootstrap_iam.py renders every role of every stack
+    and fails if one asks for something outside it."""
+    in_tag = {"StringEquals": own_tags(spec, "aws:ResourceTag")}
+    statements = [
+        allow(
+            [
+                "dynamodb:GetItem",
+                "dynamodb:Query",
+                "dynamodb:UpdateItem",
+                "dynamodb:PutItem",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DescribeStream",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:ListStreams",
+            ],
+            scoped(spec, "arn:aws:dynamodb:{region}:{account}:table/{prefix}-*"),
+        ),
+        allow(
+            ["s3:GetObjectVersion", "s3:PutObject"],
+            scoped(spec, "arn:aws:s3:::{prefix}-{account}-{region}-*/*"),
+        ),
+        allow(
+            ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:SendMessage"],
+            scoped(spec, "arn:aws:sqs:{region}:{account}:{prefix}-*"),
+        ),
+        allow(
+            ["sns:Publish", "sns:ListSubscriptionsByTopic", "sns:GetSubscriptionAttributes"],
+            scoped(spec, "arn:aws:sns:{region}:{account}:{prefix}-*"),
+        ),
+        allow(
+            ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+            scoped(spec, "arn:aws:kms:{region}:{account}:key/*"),
+            in_tag,
+        ),
+        allow(
+            ["lambda:InvokeFunction"], scoped(spec, "arn:aws:lambda:{region}:{account}:function:{prefix}-*")
+        ),
+        allow(
+            ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+            scoped(spec, "arn:aws:logs:{region}:{account}:log-group:/aws/lambda/{prefix}-*")
+            + (scoped(spec, AGENTCORE_GROUPS) if agentcore else [])
+            + scoped(spec, "arn:aws:logs:{region}:{account}:log-group:{log_prefix}/audit*"),
+        ),
+        allow(
+            ["logs:GetLogEvents"],
+            scoped(spec, "arn:aws:logs:{region}:{account}:log-group:{log_prefix}/*"),
+        ),
+        allow(["logs:StartQuery"], scoped(spec, "arn:aws:logs:{region}:{account}:log-group:*")),
+        allow(["logs:GetQueryResults", "logs:StopQuery", "logs:DescribeLogGroups"], ["*"]),
+        allow(["cloudwatch:GetMetricStatistics"], ["*"]),
+        allow(
+            ["cloudwatch:PutMetricData"],
+            ["*"],
+            {"StringLike": {"cloudwatch:namespace": f"{spec['project']}/{spec['environment']}/*"}},
+        ),
+        allow(
+            ["secretsmanager:GetSecretValue"],
+            scoped(spec, "arn:aws:secretsmanager:{region}:{account}:secret:{prefix}/*")
+            + scoped(spec, "arn:aws:secretsmanager:{region}:{account}:secret:{project}/{environment}/*"),
+        ),
+        allow(
+            ["bedrock:InvokeModel", "bedrock:CountTokens"],
+            ["arn:aws:bedrock:*::foundation-model/*", f"arn:aws:bedrock:*:{spec['account_id']}:*"],
+        ),
+        allow(
+            [
+                "cloudformation:DescribeChangeSet",
+                "cloudformation:DescribeStackEvents",
+                "cloudformation:DescribeStacks",
+                "cloudformation:ListStackResources",
+            ],
+            [f"arn:aws:cloudformation:*:{spec['account_id']}:stack/{prefix(spec)}-*/*"],
+        ),
+    ]
+    if ecs_services(spec):
+        statements += [
+            allow(["ecs:DescribeServices"], scoped(spec, "arn:aws:ecs:{region}:{account}:service/*")),
+            allow(
+                [
+                    "ecs:ListTasks",
+                    "ecs:DescribeTasks",
+                    "ecs:DescribeTaskDefinition",
+                    "elasticloadbalancing:DescribeTargetHealth",
+                ],
+                ["*"],
+            ),
+        ]
+    if agentcore:
+        statements.append(
+            allow(
+                ["bedrock-agentcore:InvokeAgentRuntime"],
+                scoped(
+                    spec, "arn:aws:bedrock-agentcore:{region}:{account}:runtime/{project}_{environment}_*"
+                ),
+            )
+        )
+    return statements
 
 
 def trust(principals):
@@ -319,7 +479,20 @@ def render(spec, *, operator_trust=None, ui_trust=None, agentcore=False, instanc
             "tracaus-ui-principal",
         ),
     }
+    resources["RuntimeBoundary"] = {
+        "Type": "AWS::IAM::ManagedPolicy",
+        "Properties": {
+            "ManagedPolicyName": f"{prefix(spec)}-runtime-boundary",
+            "Path": f"/{spec['project']}/{spec['environment']}/",
+            "Description": "Permissions boundary for every role a Tracaus release stack creates",
+            "PolicyDocument": {"Version": "2012-10-17", "Statement": boundary_policy(spec, agentcore)},
+        },
+    }
     outputs = {
+        "RuntimeBoundaryArn": {
+            "Description": "Permissions boundary the CloudFormation execution role requires on roles it creates",
+            "Value": ref("RuntimeBoundary"),
+        },
         "OperatorRoleArn": {
             "Description": "ci_principal_arn",
             "Value": {"Fn::GetAtt": ["OperatorRole", "Arn"]},

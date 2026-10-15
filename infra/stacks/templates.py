@@ -9,6 +9,7 @@ import json
 
 from infra.spec import (
     alarm_descriptors,
+    boundary_arn,
     digest,
     ecs_services,
     ecs_targets,
@@ -76,6 +77,7 @@ def role(spec, principal, statements, *, service=True, conditions=None, release=
         "IAM::Role",
         {
             "Path": f"/{spec['project']}/{spec['environment']}/",
+            "PermissionsBoundary": boundary_arn(spec),
             "Tags": tagged(spec, release),
             "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [trust]},
             "Policies": [

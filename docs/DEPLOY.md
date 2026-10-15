@@ -336,8 +336,18 @@ What the roles can do:
   create roles or functions itself.
 - **CloudFormation execution.** Only the CloudFormation service can assume it. It creates the
   resources whose names start with `PROJECT-ENVIRONMENT-`, and IAM roles only under the path
-  `/PROJECT/ENVIRONMENT/`, with inline policies and no managed-policy attachment. Because it can create
-  roles, treat it as a powerful role and keep the stack's template review (`dry-run`) in the process.
+  `/PROJECT/ENVIRONMENT/`, with inline policies and no managed-policy attachment. It can create, change
+  or delete such a role only while the permissions boundary `PROJECT-ENVIRONMENT-runtime-boundary` (made by
+  the same template) is attached, and it may not change or remove that boundary. Every role in Tracaus's
+  stacks carries it, so a template that gives a role more than the functions need (an administrator
+  policy, say) gains nothing: the role gets the smaller of the two. The boundary allows only what the
+  functions use, on resources named `PROJECT-ENVIRONMENT-*`, plus read-only log and metric queries. It
+  grants no IAM, STS or EC2 action. Its own policy is `PROJECT-ENVIRONMENT-runtime-boundary`; a test renders
+  every role of every stack and fails if one asks for more. The role may also create KMS keys only when
+  they carry your project's tags, and it can neither change a key's policy nor schedule its deletion; it
+  can touch only the log groups, alarms, dashboards and event source mappings of this deployment. Keep
+  the stack's template review (`dry-run`) in the process: the boundary caps what roles can do, not what
+  the stacks' own resources do.
 - **UI principal.** May only assume the role Tracaus generates for the UI.
 
 The template allows more than the screened actions where an update or delete needs it (for example
