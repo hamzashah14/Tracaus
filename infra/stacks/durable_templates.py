@@ -8,6 +8,7 @@ from infra.spec import (
     ecs_services,
     event_rules,
     fallback_recipients,
+    investigation_concurrency,
     log_prefix,
     name,
     prefix,
@@ -375,6 +376,24 @@ def foundation(spec, config):
             "Tags": tagged(spec),
         },
     )
+    if "observability" not in spec:  # with observers on, their WorkAge alarm already watches this queue
+        r["WorkAgeAlarm"] = resource(
+            "CloudWatch::Alarm",
+            {
+                "AlarmName": name(spec, "work-age"),
+                "AlarmDescription": "Investigations are waiting for a free worker; see docs/OPERATE.md",
+                "Namespace": "AWS/SQS",
+                "MetricName": "ApproximateAgeOfOldestMessage",
+                "Dimensions": [{"Name": "QueueName", "Value": queue_name(spec, "Work")}],
+                "Statistic": "Maximum",
+                "Period": 300,
+                "EvaluationPeriods": 1,
+                "Threshold": 300,
+                "ComparisonOperator": "GreaterThanThreshold",
+                "TreatMissingData": "notBreaching",
+                "AlarmActions": [ref("FallbackTopic")],
+            },
+        )
     r["StreamDeadAlarm"] = resource(
         "CloudWatch::Alarm",
         {
@@ -655,7 +674,9 @@ def active_routing(
         )
         if key == "Work":
             r[key + "Mapping"]["Properties"]["BatchSize"] = 1
-            r[key + "Mapping"]["Properties"]["ScalingConfig"] = {"MaximumConcurrency": 2}
+            r[key + "Mapping"]["Properties"]["ScalingConfig"] = {
+                "MaximumConcurrency": investigation_concurrency(spec)
+            }
             r[key + "Mapping"]["Properties"]["Enabled"] = (
                 not spec["maintenance_mode"] and not investigation_paused
             )

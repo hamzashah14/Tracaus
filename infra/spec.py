@@ -227,6 +227,12 @@ def load(path):
     return value
 
 
+def investigation_concurrency(spec):
+    """Investigations that may run at once: one per target, so a fleet-wide event is not queued past its deadline.
+    SQS event source mappings need at least 2 (a Lambda account may need its limit raised above 10)."""
+    return max(2, len(targets(spec)))
+
+
 def daily_token_budget(spec):
     from tracaus.runtime import DAILY_TOKEN_BUDGET
 

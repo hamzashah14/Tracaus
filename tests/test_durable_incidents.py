@@ -907,3 +907,42 @@ def test_audit_log_group_is_created_and_only_the_ui_role_may_write_it():
                     if any(isinstance(r, str) and "log-group:/tracaus/staging/audit" in r for r in resources):
                         writers.append((logical, sorted(statement["Action"])))
     assert writers == [("UiRole", ["logs:CreateLogStream", "logs:PutLogEvents"])]
+
+
+def spec_with_targets(count):
+    from infra.spec import ROOT
+
+    value = json.loads((ROOT / "examples/deployment.example.json").read_text())
+    first = value["instances"][0]
+    value["instances"] = [{**first, "id": f"i-{n:017x}"} for n in range(count)]
+    return value
+
+
+@pytest.mark.parametrize("count,expected", [(1, 2), (2, 2), (5, 5), (10, 10)])
+def test_investigations_run_as_many_at_once_as_there_are_targets(tmp_path, count, expected):
+    from infra.spec import ROOT, investigation_concurrency, load
+    from scripts.dev.validate_durable import examples
+
+    path = tmp_path / "deployment.json"
+    path.write_text(json.dumps(spec_with_targets(count)))
+    spec = load(path)
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    assert investigation_concurrency(spec) == expected
+    work = examples(spec, config)["routing"]["Resources"]["WorkMapping"]["Properties"]
+    assert work["ScalingConfig"] == {"MaximumConcurrency": expected}
+
+
+def test_a_backlog_alarm_exists_unless_the_observers_already_watch_the_queue():
+    from infra.spec import ROOT, load
+    from scripts.dev import validate_observations
+    from scripts.dev.validate_durable import examples
+
+    config = json.loads((ROOT / "examples/durable.example.json").read_text())
+    plain = examples(load(ROOT / "examples/deployment.example.json"), config)["durable-foundation"]
+    alarm = plain["Resources"]["WorkAgeAlarm"]["Properties"]
+    assert alarm["MetricName"] == "ApproximateAgeOfOldestMessage" and alarm["Threshold"] == 300
+    assert alarm["Dimensions"] == [{"Name": "QueueName", "Value": "tracaus-staging-work-queue"}]
+    assert alarm["AlarmActions"] == [{"Ref": "FallbackTopic"}]
+    observed = validate_observations.fixtures(load(ROOT / "examples/observability.example.json"), config)
+    assert "WorkAgeAlarm" not in observed["durable-foundation"]["Resources"]
+    assert "WorkAge" in observed["observations"]["Resources"]

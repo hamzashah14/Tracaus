@@ -434,7 +434,7 @@ def verify_routing(bundle):
         ]["Properties"]
         if any(mappings[0].get(key) != properties[key] for key in ("BatchSize", "FunctionResponseTypes")):
             raise VerificationError("Durable mapping batch size or partial failure handling drifted")
-        if logical == "Investigate" and mappings[0].get("ScalingConfig") != {"MaximumConcurrency": 2}:
+        if logical == "Investigate" and mappings[0].get("ScalingConfig") != properties["ScalingConfig"]:
             raise VerificationError("Investigation concurrency cap drifted")
     events = clients("events", spec["monitor_region"])
     sweep = desired["SweepRule"]["Properties"]

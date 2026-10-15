@@ -143,6 +143,11 @@ scale-in stop is not an incident, so a normal release does not page you.
   dead-letter queue (DLQ, `-dead`) that receives a message after five failed receives. There are also
   `-delivery-dead`, `-stream-dead`, `-observation-dead` and the `-observation-receipts` queue. Any DLQ message
   raises an alarm. SQS deletes messages after 14 days, so triage well before.
+- **Parallel investigations.** The work queue runs as many investigations at once as you have targets (at least 2,
+  at most 10), so a fleet-wide event does not queue later incidents past their 600 s deadline. Each running
+  investigation is a Lambda execution, so check that your account's Lambda concurrency limit allows it. If a
+  backlog still forms, the `-work-age` alarm (without observers; with observers, `WorkAge`) fires when the oldest
+  waiting message is older than 5 minutes.
 - **Ledger.** The incident DynamoDB table is the authority on what Tracaus accepted. SQS counts are approximate and the
   pending-intents index is eventually consistent, so read queue age and ledger state together.
 - **Sweeps.** Four independent sweeps run every minute: pending intents, overdue incidents, expired workers and
