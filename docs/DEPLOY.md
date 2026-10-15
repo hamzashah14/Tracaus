@@ -777,10 +777,12 @@ sign-in again.
 - **Remove a person:** delete their entry. The file is re-read when it changes, so it applies on
   their next request. An in-flight request finishes. There is no remote logout. Also disable them
   at the identity provider.
-- **Audit:** each chat request, report view and refused sign-in prints one JSON line to the UI's
-  standard output: time, subject, role, action, outcome, token counts, and the instance for report
-  views. It never contains prompt, log or error text. Keep that output in your platform's log
-  service. The outcomes are listed in [OPERATE.md](OPERATE.md#team-access-and-secret-rotation).
+- **Audit:** each chat request, report view and refused sign-in writes one JSON line to the UI's
+  standard output and to the CloudWatch Logs group `/PROJECT/ENVIRONMENT/audit` (retention
+  `log_retention_days`; the UI role may only create streams and put events there): time, subject, role,
+  action, outcome, token counts, and the instance for report views. It never contains prompt, log or
+  error text. If a write fails, or `AUDIT_LOG_GROUP` is not set, the line stays on standard output and
+  the UI shows a warning. The outcomes are listed in [OPERATE.md](OPERATE.md#team-access-and-secret-rotation).
 - **Limits:** the hourly limit is counted per person inside one UI process. It is shared across
   that person's browser sessions, it resets on restart, and several processes would each count
   separately. Run one process.

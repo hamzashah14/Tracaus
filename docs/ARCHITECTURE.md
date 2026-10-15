@@ -79,7 +79,7 @@ or dedicated chat capacity.
 3. An investigator asks about an instance on their list. Tracaus's code checks that list,
    not IAM, because one AWS role serves everyone. Each request counts against a
    per-person hourly limit in the UI process and writes one audit line to standard
-   output. Then chat runs in the UI process as in the default mode.
+   output and to a CloudWatch Logs group. Then chat runs in the UI process as in the default mode.
 
 **Both modes continue here.**
 

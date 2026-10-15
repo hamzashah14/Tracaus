@@ -235,7 +235,8 @@ or invalid file stops the UI, and it never opens to everyone. Review the list mo
 incident or provider change. Rehearse secret rotation quarterly.
 
 **Read the audit line (team mode only).** Each chat request, report view and refused sign-in writes one JSON object
-to the UI's standard output. It has `ts`, `event` (always `tracaus.audit`), `sub`, `role`, `instance`, `action` and
+to the UI's standard output and to the CloudWatch Logs group `/PROJECT/ENVIRONMENT/audit`, one log stream per UI
+process (query it with Logs Insights). It has `ts`, `event` (always `tracaus.audit`), `sub`, `role`, `instance`, `action` and
 `outcome`, plus `instance_count` and `tokens` (`input` and `output` counts only) when they apply. It never contains
 prompt, log or exception text.
 
@@ -245,8 +246,9 @@ prompt, log or exception text.
   that does not finish is `ERROR` or `PARTIAL`.
 - A refused sign-in is written once per browser session and reason, and a report view once per incident in a browser
   session. A person who is not on the list and reloads in new sessions writes one line per session, and the rate is
-  not capped. Put the log under your platform's normal log retention and alerting. The audit trail is only as
-  durable as the platform that keeps standard output.
+  not capped. The log group keeps lines for `log_retention_days`. If the UI cannot write to it (or `AUDIT_LOG_GROUP`
+  is missing from its environment) it shows a warning and the lines exist only on standard output, so keep that
+  output under your platform's log retention as well.
 - The hourly chat limit is counted per person (`sub`) in memory in one UI process, across that person's browser
   sessions. It resets when the UI restarts, and a second process counts separately.
 
@@ -310,7 +312,7 @@ Before relying on a provider, complete the Model API items in [ACCEPTANCE.md](AC
 | Data | Where and how long |
 |---|---|
 | Incident evidence and reports | Private versioned KMS bucket. Lifecycle and incident TTL follow `retention_days` in `runtime.json` (7 to 365). |
-| Team audit lines (team mode only) | One JSON line per event on the UI's standard output. Kept as long as your platform's log service keeps them. Subject, role, action, outcome and token counts, never prompt or log text. |
+| Team audit lines (team mode only) | One JSON line per event in the CloudWatch Logs group `/PROJECT/ENVIRONMENT/audit` (`log_retention_days`) and on the UI's standard output. Subject, role, action, outcome and token counts, never prompt or log text. |
 | Raw logs and provider data | Stay in your systems. CloudWatch Logs follow `log_retention_days` in `deployment.json`. |
 | Excerpts and questions sent to a Model API provider | Held by that provider under its own terms. Tracaus cannot erase them. |
 | Erasure tombstones | 35 days live. Keep your own private purge registry through the longest backup or export window. |
